@@ -1,7 +1,7 @@
 ---
 title: Git对象模型：一步一步分析Git底层对象模型
 date: 2019-06-24T11:00:00.000Z
-updated: 2019-08-18T13:47:16.812Z
+updated: 2025-11-22T12:38:35.138Z
 tags: [vcs,git]
 categories: [git]
 ---
@@ -42,13 +42,13 @@ Git是一个非常强大的版本管理工具，有非常多的概念和命令�
 
 `blob` 用来存储文件数据，通常是一个文件。
 
-![blob](https://raw.githubusercontent.com/liuyanjie/knowledge/master/vcs/git/images/object-blob.png)
+![blob](../../../images/vcs/git/images/object-blob.png)
 
 #### tree (目录) 对象
 
 `tree` 像一个目录，管理 `tree（子目录）` 或 `blob（文件）`
 
-![tree](https://raw.githubusercontent.com/liuyanjie/knowledge/master/vcs/git/images/object-tree.png)
+![tree](../../../images/vcs/git/images/object-tree.png)
 
 #### commit (提交) 对象
 
@@ -56,7 +56,7 @@ Git是一个非常强大的版本管理工具，有非常多的概念和命令�
 
 它包括一些关于时间点的元数据，如 `时间戳`、`最近一次提交的作者`、`指向上次提交（commits）的指针` 等等。
 
-![tree](https://raw.githubusercontent.com/liuyanjie/knowledge/master/vcs/git/images/object-commit.png)
+![tree](../../../images/vcs/git/images/object-commit.png)
 
 ```
 $ git cat-file -p 830f4857e9f579818c5e69104d3e2cc30f1f0d0d
@@ -70,7 +70,7 @@ commit message
 
 #### tag (标签) 对象
 
-![tag](https://raw.githubusercontent.com/liuyanjie/knowledge/master/vcs/git/images/object-tag.png)
+![tag](../../../images/vcs/git/images/object-tag.png)
 
 一个 `tag` 是来标记某一个 `commit` 的方法。
 
@@ -83,7 +83,7 @@ $ cat .git/refs/tags/v0.0.0
 
 #### commit -> tree -> blob
 
-![object-c-t-b](https://raw.githubusercontent.com/liuyanjie/knowledge/master/vcs/git/images/object-c-t-b.png)
+![object-c-t-b](../../../images/vcs/git/images/object-c-t-b.png)
 
 从图上可以看出：一个 `commit` 指向了一棵由 `tree` 和 `blob` 构成的 Git 对象树。
 
@@ -1301,7 +1301,7 @@ ref: refs/heads/master
 
 [svg版](https://github.com/liuyanjie/knowledge/tree/master/vcs/git/images/git-obj-model.svg)
 
-![git-obj-model](https://raw.githubusercontent.com/liuyanjie/knowledge/master/vcs/git/images/git-obj-model.png)
+![git-obj-model](../../../images/vcs/git/images/git-obj-model.png)
 
 
 ---
