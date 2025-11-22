@@ -20,7 +20,16 @@
   </url>
   
   <url>
-    <loc>https://blog.butonly.com/about/index.html</loc>
+    <loc>https://blog.butonly.com/categories/index.html</loc>
+    
+    <lastmod>2023-04-23</lastmod>
+    
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <url>
+    <loc>https://blog.butonly.com/tags/index.html</loc>
     
     <lastmod>2023-04-23</lastmod>
     
@@ -38,16 +47,7 @@
   </url>
   
   <url>
-    <loc>https://blog.butonly.com/categories/index.html</loc>
-    
-    <lastmod>2023-04-23</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://blog.butonly.com/tags/index.html</loc>
+    <loc>https://blog.butonly.com/about/index.html</loc>
     
     <lastmod>2023-04-23</lastmod>
     
