@@ -84,8 +84,8 @@ pagination_dir: page
 ## Docs: https://hexo.io/docs/deployment.html
 deploy:
   type: git
-  # repo: git@github.com:butonly/butonly.github.io.git
-  repo: https://github.com/butonly/butonly.github.io.git
+  # repo: git@github.com:c-cc-cc/c-cc-cc.github.io
+  repo: https://github.com/c-cc-cc/c-cc-cc.github.io
   branch: master
   token: $GITHUB_TOKEN
   # message: [message]
