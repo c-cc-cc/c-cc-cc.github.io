@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)"><meta name="generator" content="Hexo 8.1.1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png">
+  <link rel="mask-icon" href="/favicon.png" color="#222">
+  <link rel="manifest" href="/manifest.json">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.css" integrity="sha256-gkQVf8UKZgQ0HyuxL/VnacadJ+D2Kox2TCEBuNQg5+w=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"blog.butonly.com","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.26.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"tomorrow-night-bright"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":true,"pangu":true,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"algolia":{"appID":"FRAAR0AUP0","apiKey":"459ace1d7f5aabfa15b4f89baba340b3","indexName":"blog.butonly.com","hits":{"per_page":10}}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="事件循环是 libuv 功能的核心部分。它的主要职责是对 I&#x2F;O 进行轮询然后基于不同的事件源调用它们的回调。 事件循环主体数据结构在 libuv 中用 struct uv_loop_s 或类型别名 uv_loop_t 表示，文中统一使用 loop 表示其实例，它代表了事件循环，实际上它是事件循环所有资源的统一入口，所有在事件循环上运行的各类 Handle&#x2F;Request 实例都被注册到">
+<meta property="og:type" content="article">
+<meta property="og:title" content="libuv源码分析（二）事件循环（Eventloop）">
+<meta property="og:url" content="https://blog.butonly.com/posts/node.js/libuv/2-libuv-event-loop/index.html">
+<meta property="og:site_name" content="liuyanjie&#39;s blog">
+<meta property="og:description" content="事件循环是 libuv 功能的核心部分。它的主要职责是对 I&#x2F;O 进行轮询然后基于不同的事件源调用它们的回调。 事件循环主体数据结构在 libuv 中用 struct uv_loop_s 或类型别名 uv_loop_t 表示，文中统一使用 loop 表示其实例，它代表了事件循环，实际上它是事件循环所有资源的统一入口，所有在事件循环上运行的各类 Handle&#x2F;Request 实例都被注册到">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://docs.libuv.org/en/v1.x/_images/loop_iteration.png">
+<meta property="article:published_time" content="2019-04-23T07:00:02.000Z">
+<meta property="article:modified_time" content="2021-05-08T08:18:19.515Z">
+<meta property="article:author" content="liuyanjie">
+<meta property="article:tag" content="eventloop">
+<meta property="article:tag" content="libuv">
+<meta property="article:tag" content="node.js">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://docs.libuv.org/en/v1.x/_images/loop_iteration.png">
+
+
+<link rel="canonical" href="https://blog.butonly.com/posts/node.js/libuv/2-libuv-event-loop/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://blog.butonly.com/posts/node.js/libuv/2-libuv-event-loop/","path":"posts/node.js/libuv/2-libuv-event-loop/","title":"libuv源码分析（二）事件循环（Eventloop）"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>libuv源码分析（二）事件循环（Eventloop） | liuyanjie's blog</title>
+  
+    <script async src="https://www.googletagmanager.com/gtag/js?id=014348069229275019795:-z92dm0sjiy"></script>
+  <script class="next-config" data-name="google_analytics" type="application/json">{"tracking_id":"014348069229275019795:-z92dm0sjiy","only_pageview":false,"measure_protocol_api_secret":null}</script>
+  <script src="/js/third-party/analytics/google-analytics.js" defer></script>
+
+  <script src="/js/third-party/analytics/baidu-analytics.js" defer></script>
+  <script async src="https://hm.baidu.com/hm.js?4cd57e104d0d9f5862dd91d0acdb9eee"></script>
+
+
+
+
+
+
+
+  
+  <script size="300" alpha="0.6" zIndex="-1" src="https://cdn.jsdelivr.net/npm/ribbon.js@1.0.2/dist/ribbon.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.umd.js" integrity="sha256-a+H7FYzJv6oU2hfsfDGM2Ohw/cR9v+hPfxHCLdmCrE8=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/lozad@1.16.0/dist/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/pangu@7.2.0/dist/browser/pangu.umd.js" integrity="sha256-JnmRRnJK7DC6RQJbAJb6AXOM9OmWzS6z8eYultk/48Y=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script><script src="/js/bookmark.js" defer></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/algoliasearch@5.36.0/dist/lite/builds/browser.umd.js" integrity="sha256-o49zoHLDPBm9WLg6AiliAVi3axCRTqe3ltTxLvhzAVg=" crossorigin="anonymous" defer></script><script src="/js/third-party/search/algolia-search.js" defer></script>
+
+  <script class="next-config" data-name="pdf" type="application/json">{"object_url":{"url":"https://cdn.jsdelivr.net/npm/pdfobject@2.3.1/pdfobject.min.js","integrity":"sha256-jI72I8ZLVflVOisZIOaLvRew3tyvzeu6aZXFm7P7dEo="},"url":"/lib/pdf/web/viewer.html"}</script>
+  <script src="/js/third-party/tags/pdf.js" defer></script>
+
+  <script class="next-config" data-name="mermaid" type="application/json">{"enable":true,"theme":"forest","js":{"url":"https://cdn.jsdelivr.net/npm/mermaid@11.10.1/dist/mermaid.min.js","integrity":"sha256-BmQmdWDS8X2OTbrwELWK366LV6escyWhHHe0XCTU/Hk="}}</script>
+  <script src="/js/third-party/tags/mermaid.js" defer></script>
+
+
+  <script src="/js/third-party/fancybox.js" defer></script>
+
+
+
+  
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+<link rel="alternate" href="/atom.xml" title="liuyanjie's blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">liuyanjie's blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <img class="custom-logo-image" src="/logo.png" alt="liuyanjie's blog">
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="home fa-fw"></i>首页</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">6</span></a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+      <div class="search-header">
+        <span class="search-icon">
+          <i class="fa fa-search"></i>
+        </span>
+        <div class="search-input-container">
+          <input autocomplete="off" autocapitalize="off" maxlength="80"
+                placeholder="搜索..." spellcheck="false"
+                type="search" class="search-input">
+        </div>
+        <span class="popup-btn-close" role="button">
+          <i class="fa fa-times-circle"></i>
+        </span>
+      </div>
+      <div class="search-result-container">
+        <div class="search-result-icon">
+          <i class="fab fa-algolia fa-5x"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Example"><span class="nav-number">1.</span> <span class="nav-text">Example</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Init%EF%BC%9Auv-loop-init"><span class="nav-number">2.</span> <span class="nav-text">Init：uv_loop_init</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Run%EF%BC%9Auv-run"><span class="nav-number">3.</span> <span class="nav-text">Run：uv_run</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Stop"><span class="nav-number">4.</span> <span class="nav-text">Stop</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="liuyanjie"
+      src="/avatar.png">
+  <p class="site-author-name" itemprop="name">liuyanjie</p>
+  <div class="site-description" itemprop="description">KISS DRY</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">13</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/liuyanjie" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;liuyanjie" rel="noopener me" target="_blank"><i class="github fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="/liuyj619@gmail.com" title="E-Mail → liuyj619@gmail.com" rel="noopener me"><i class="envelope fa-fw"></i></a>
+      </span>
+  </div>
+  <div class="cc-license animated" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="https://cdn.jsdelivr.net/npm/@creativecommons/vocabulary@2020.11.3/assets/license_badges/small/by_nc_sa.svg" alt="Creative Commons"></a>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://blog.butonly.com/posts/node.js/libuv/2-libuv-event-loop/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/avatar.png">
+      <meta itemprop="name" content="liuyanjie">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liuyanjie's blog">
+      <meta itemprop="description" content="KISS DRY">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="libuv源码分析（二）事件循环（Eventloop） | liuyanjie's blog">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          libuv源码分析（二）事件循环（Eventloop）
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2019-04-23 15:00:02" itemprop="dateCreated datePublished" datetime="2019-04-23T15:00:02+08:00">2019-04-23</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2021-05-08 16:18:19" itemprop="dateModified" datetime="2021-05-08T16:18:19+08:00">2021-05-08</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" itemprop="url" rel="index"><span itemprop="name">源码分析</span></a>
+        </span>
+    </span>
+
+  
+  
+  <span class="post-meta-item">
+    
+      <span class="post-meta-item-icon">
+        <i class="far fa-comment"></i>
+      </span>
+      <span class="post-meta-item-text">Disqus：</span>
+    
+    <a title="disqus" href="/posts/node.js/libuv/2-libuv-event-loop/#disqus_thread" itemprop="discussionUrl">
+      <span class="post-comments-count disqus-comment-count" data-disqus-identifier="posts/node.js/libuv/2-libuv-event-loop/" itemprop="commentCount"></span>
+    </a>
+  </span>
+  
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>10k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>9 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>事件循环是 libuv 功能的核心部分。它的主要职责是对 I&#x2F;O 进行轮询然后基于不同的事件源调用它们的回调。</p>
+<p>事件循环主体数据结构在 libuv 中用 <code>struct uv_loop_s</code> 或类型别名 <code>uv_loop_t</code> 表示，文中统一使用 <code>loop</code> 表示其实例，它代表了事件循环，实际上它是事件循环所有资源的统一入口，所有在事件循环上运行的各类 <code>Handle/Request</code> 实例都被注册到 <code>uv_loop_s</code> 内部的各类结构中如队列、堆、伸展树等，同一 <code>Handle</code> 实例通常也会被关联到多个不同的结构中，如大多数 <code>Handle</code> 都会同时存在两个队列中。</p>
+<p><code>uv_loop_t</code> 是一种特殊的 <code>Handle</code>，它管理了同一事件循环上的所有资源。</p>
+<p><code>uv_loop_t</code> 实例通常需要经历 <code>Init</code>、<code>Run</code>、<code>Stop</code>、<code>Close</code> 这几个生命周期，下面将分别分析几个阶段的实现。</p>
+<h2 id="Example"><a href="#Example" class="headerlink" title="Example"></a>Example</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;uv.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">()</span> &#123;</span><br><span class="line">    <span class="type">uv_loop_t</span>* loop = uv_default_loop();</span><br><span class="line">    uv_run(loop, UV_RUN_DEFAULT);</span><br><span class="line">    uv_loop_close(loop);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;quit.\n&quot;</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">gcc -luv helloworld.c -o helloworld</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ ./helloworld</span><br><span class="line">quit.</span><br></pre></td></tr></table></figure>
+
+<p>以上是一个最基本的 libuv 程序代码，通过 <code>uv_run</code> 函数启动了 libuv 事件循环，所以 <code>uv_run</code> 做为事件循环的入口一定是阅读源码的重点，可以 <code>uv_run</code> 为起点，先看看 <code>uv_run</code> 都做了什么。</p>
+<p>程序启动之后，打印了 <code>quit.\n</code> 立刻退出了，更具体一点说就是，所以函数调用尤其是 <code>uv_run</code> 函数立即返回了，程序自然就退出了，因为我们实际什么也有做，连上文提到的异步操作以及注册的回调函数都没有。</p>
+<h2 id="Init：uv-loop-init"><a href="#Init：uv-loop-init" class="headerlink" title="Init：uv_loop_init"></a>Init：uv_loop_init</h2><p>在常见的使用场景中，通常都是直接调用 <code>uv_default_loop</code> 获取已经初始了的全局 <code>uv_loop_t</code> 实例，所以在分析 <code>uv_run</code> 之前，先看一下 <code>uv_loop_t</code> 初始化。</p>
+<p>先来看一下 <code>uv_default_loop</code>：<a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/loop.c#L30">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/loop.c#L30</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">uv_loop_t</span> default_loop_struct;</span><br><span class="line"><span class="type">static</span> <span class="type">uv_loop_t</span>* default_loop_ptr;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">uv_loop_t</span>* <span class="title function_">uv_default_loop</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">  <span class="keyword">if</span> (default_loop_ptr != <span class="literal">NULL</span>)</span><br><span class="line">    <span class="keyword">return</span> default_loop_ptr;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (uv_loop_init(&amp;default_loop_struct))</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line"></span><br><span class="line">  default_loop_ptr = &amp;default_loop_struct;</span><br><span class="line">  <span class="keyword">return</span> default_loop_ptr;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>在 libuv 中存在一个全局的、静态的 <code>uv_loop_t</code> 实例 <code>default_loop_struct</code>，首次获取的时候经过 <code>uv_loop_init</code> 进行了初始化。</p>
+<p><code>uv_default_loop</code> 调用 <code>uv_loop_init</code> 对 <code>default_loop_struct</code> 进行初始化并将地址赋给了 <code>default_loop_ptr</code>。</p>
+<p><code>uv_loop_init</code> 实现如下（含注释）：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/loop.c#L29">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/loop.c#L29</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_loop_init</span><span class="params">(<span class="type">uv_loop_t</span>* loop)</span> &#123;</span><br><span class="line">  <span class="type">void</span>* saved_data;</span><br><span class="line">  <span class="type">int</span> err;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 数据清零</span></span><br><span class="line">  saved_data = loop-&gt;data;</span><br><span class="line">  <span class="built_in">memset</span>(loop, <span class="number">0</span>, <span class="keyword">sizeof</span>(*loop));</span><br><span class="line">  loop-&gt;data = saved_data;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 定时器 uv_timer_t 相关：初始化定时器堆</span></span><br><span class="line">  heap_init((<span class="keyword">struct</span> heap*) &amp;loop-&gt;timer_heap);</span><br><span class="line">  <span class="comment">// 初始化用于接收线程池中已完成任务的队列</span></span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;wq);</span><br><span class="line">  <span class="comment">// 初始化 uv_idle_t 队列</span></span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;idle_handles);</span><br><span class="line">  <span class="comment">// 初始化 uv_async_t 队列</span></span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;async_handles);</span><br><span class="line">  <span class="comment">// 初始化 uv_check_t 队列</span></span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;check_handles);</span><br><span class="line">  <span class="comment">// 初始化 uv_prepare_t 队列</span></span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;prepare_handles);</span><br><span class="line">  <span class="comment">// 初始化 uv_handle_t 队列，所以初始化后的 handle 都会放到此队列中</span></span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;handle_queue);</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 初始化 活跃的 handle 和 request 数量</span></span><br><span class="line">  loop-&gt;active_handles = <span class="number">0</span>;</span><br><span class="line">  loop-&gt;active_reqs.count = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 开始初始化I/O观察者相关字段</span></span><br><span class="line">  <span class="comment">// 文件描述符数量</span></span><br><span class="line">  loop-&gt;nfds = <span class="number">0</span>;</span><br><span class="line">  <span class="comment">// I/O观察者数组首地址指针</span></span><br><span class="line">  loop-&gt;watchers = <span class="literal">NULL</span>;</span><br><span class="line">  <span class="comment">// I/O观察者数组数量，但是 `loop-&gt;watchers` 实际长度为：nwatchers + 2</span></span><br><span class="line">  loop-&gt;nwatchers = <span class="number">0</span>;</span><br><span class="line">  <span class="comment">// 初始化 挂起的I/O观察者队列，挂起的I/O观察者会被插入此队列延迟处理</span></span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;pending_queue);</span><br><span class="line">  <span class="comment">// 初始化 I/O观察者队列，所有初始化后的I/O观察者都会被插入此队列</span></span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;watcher_queue);</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 关闭的 handle 队列，单向链表</span></span><br><span class="line">  loop-&gt;closing_handles = <span class="literal">NULL</span>;</span><br><span class="line">  <span class="comment">// 初始化计时器 loop-&gt;time</span></span><br><span class="line">  uv__update_time(loop);</span><br><span class="line">  </span><br><span class="line">  <span class="comment">// uv_async_t</span></span><br><span class="line">  <span class="comment">// 初始化 async_io_watcher，它是一个I/O观察者，用于 uv_async_t 唤醒事件循环</span></span><br><span class="line">  loop-&gt;async_io_watcher.fd = <span class="number">-1</span>;</span><br><span class="line">  <span class="comment">// 用于写数据给 async_io_watcher</span></span><br><span class="line">  loop-&gt;async_wfd = <span class="number">-1</span>;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// uv_signal_t</span></span><br><span class="line">  loop-&gt;signal_pipefd[<span class="number">0</span>] = <span class="number">-1</span>;</span><br><span class="line">  loop-&gt;signal_pipefd[<span class="number">1</span>] = <span class="number">-1</span>;</span><br><span class="line">  <span class="comment">// epoll_create()</span></span><br><span class="line">  loop-&gt;backend_fd = <span class="number">-1</span>;</span><br><span class="line">  <span class="comment">// EMFILE 错误相关</span></span><br><span class="line">  loop-&gt;emfile_fd = <span class="number">-1</span>;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 定时器计数器</span></span><br><span class="line">  loop-&gt;timer_counter = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 事件循环关闭标识</span></span><br><span class="line">  loop-&gt;stop_flag = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 平台特定初始化：UV_LOOP_PRIVATE_FIELDS</span></span><br><span class="line">  err = uv__platform_loop_init(loop);</span><br><span class="line">  <span class="keyword">if</span> (err)</span><br><span class="line">    <span class="keyword">return</span> err;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// uv_signal_t</span></span><br><span class="line">  <span class="comment">// 初始化进程信号</span></span><br><span class="line">  uv__signal_global_once_init();</span><br><span class="line"></span><br><span class="line">  <span class="comment">// uv_proccess_t</span></span><br><span class="line">  <span class="comment">// 初始化子进程信号观察者</span></span><br><span class="line">  err = uv_signal_init(loop, &amp;loop-&gt;child_watcher);</span><br><span class="line">  <span class="keyword">if</span> (err)</span><br><span class="line">    <span class="keyword">goto</span> fail_signal_init;</span><br><span class="line">  <span class="comment">// 解引用loop-&gt;child_watcher</span></span><br><span class="line">  uv__handle_unref(&amp;loop-&gt;child_watcher);</span><br><span class="line">  loop-&gt;child_watcher.flags |= UV_HANDLE_INTERNAL;</span><br><span class="line">  <span class="comment">// 初始化子进程 handle 队列</span></span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;process_handles);</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 初始化线程读写锁</span></span><br><span class="line">  err = uv_rwlock_init(&amp;loop-&gt;cloexec_lock);</span><br><span class="line">  <span class="keyword">if</span> (err)</span><br><span class="line">    <span class="keyword">goto</span> fail_rwlock_init;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 初始化线程互斥量锁</span></span><br><span class="line">  err = uv_mutex_init(&amp;loop-&gt;wq_mutex);</span><br><span class="line">  <span class="keyword">if</span> (err)</span><br><span class="line">    <span class="keyword">goto</span> fail_mutex_init;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// uv_work_t</span></span><br><span class="line">  <span class="comment">// 初始化loop-&gt;wq_async，用于结束任务完成信号，并注册处理函数</span></span><br><span class="line">  err = uv_async_init(loop, &amp;loop-&gt;wq_async, uv__work_done);</span><br><span class="line">  <span class="keyword">if</span> (err)</span><br><span class="line">    <span class="keyword">goto</span> fail_async_init;</span><br><span class="line">  <span class="comment">// 解引用</span></span><br><span class="line">  uv__handle_unref(&amp;loop-&gt;wq_async);</span><br><span class="line">  loop-&gt;wq_async.flags |= UV_HANDLE_INTERNAL;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">fail_async_init:</span><br><span class="line">  uv_mutex_destroy(&amp;loop-&gt;wq_mutex);</span><br><span class="line"></span><br><span class="line">fail_mutex_init:</span><br><span class="line">  uv_rwlock_destroy(&amp;loop-&gt;cloexec_lock);</span><br><span class="line"></span><br><span class="line">fail_rwlock_init:</span><br><span class="line">  uv__signal_loop_cleanup(loop);</span><br><span class="line"></span><br><span class="line">fail_signal_init:</span><br><span class="line">  uv__platform_loop_delete(loop);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">return</span> err;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>uv_loop_init</code> 的初始化代码是比较长的，它初始化了 libuv 运行时所有依赖的内容，这包括事件循环自身运行所需的内容，以及各类型 Handle 运行所需的共有内容和特定内容，这些都在 <code>uv_loop_t</code> 实例初始化的时候一并进行了初始化，初始化细节和很多有其他功能相关，当分析其他功能时，还会提及涉及到的该函数的部分代码块。</p>
+<h2 id="Run：uv-run"><a href="#Run：uv-run" class="headerlink" title="Run：uv_run"></a>Run：uv_run</h2><p>下面我们就来看一下 <code>uv_run</code> 函数都干了什么：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L343">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L343</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_run</span><span class="params">(<span class="type">uv_loop_t</span>* loop, uv_run_mode mode)</span> &#123;</span><br><span class="line">  <span class="type">int</span> timeout;</span><br><span class="line">  <span class="type">int</span> r;</span><br><span class="line">  <span class="type">int</span> ran_pending;</span><br><span class="line"></span><br><span class="line">  r = uv__loop_alive(loop);</span><br><span class="line">  <span class="keyword">if</span> (!r)</span><br><span class="line">    uv__update_time(loop);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">while</span> (r != <span class="number">0</span> &amp;&amp; loop-&gt;stop_flag == <span class="number">0</span>) &#123;</span><br><span class="line">    uv__update_time(loop);</span><br><span class="line">    uv__run_timers(loop);</span><br><span class="line">    ran_pending = uv__run_pending(loop);</span><br><span class="line">    uv__run_idle(loop);</span><br><span class="line">    uv__run_prepare(loop);</span><br><span class="line"></span><br><span class="line">    timeout = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">if</span> ((mode == UV_RUN_ONCE &amp;&amp; !ran_pending) || mode == UV_RUN_DEFAULT)</span><br><span class="line">      timeout = uv_backend_timeout(loop);</span><br><span class="line"></span><br><span class="line">    uv__io_poll(loop, timeout);</span><br><span class="line">    uv__run_check(loop);</span><br><span class="line">    uv__run_closing_handles(loop);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (mode == UV_RUN_ONCE) &#123;</span><br><span class="line">      <span class="comment">/* UV_RUN_ONCE implies forward progress: at least one callback must have</span></span><br><span class="line"><span class="comment">       * been invoked when it returns. uv__io_poll() can return without doing</span></span><br><span class="line"><span class="comment">       * I/O (meaning: no callbacks) when its timeout expires - which means we</span></span><br><span class="line"><span class="comment">       * have pending timers that satisfy the forward progress constraint.</span></span><br><span class="line"><span class="comment">       *</span></span><br><span class="line"><span class="comment">       * UV_RUN_NOWAIT makes no guarantees about progress so it&#x27;s omitted from</span></span><br><span class="line"><span class="comment">       * the check.</span></span><br><span class="line"><span class="comment">       */</span></span><br><span class="line">      uv__update_time(loop);</span><br><span class="line">      uv__run_timers(loop);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    r = uv__loop_alive(loop);</span><br><span class="line">    <span class="keyword">if</span> (mode == UV_RUN_ONCE || mode == UV_RUN_NOWAIT)</span><br><span class="line">      <span class="keyword">break</span>;</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="comment">/* The if statement lets gcc compile it to a conditional store. Avoids</span></span><br><span class="line"><span class="comment">   * dirtying a cache line.</span></span><br><span class="line"><span class="comment">   */</span></span><br><span class="line">  <span class="keyword">if</span> (loop-&gt;stop_flag != <span class="number">0</span>)</span><br><span class="line">    loop-&gt;stop_flag = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">return</span> r;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到 <code>uv_run</code> 内部就是一个 <code>while</code> 循环，在 <code>UV_RUN_ONCE</code> 和 <code>UV_RUN_NOWAIT</code> 两种模式下，循环在执行一次后就会 <code>break</code>，一次性的，实际上没有循环。另外 在 <code>uv__loop_alive(loop) == 0</code> 或者 <code>loop-&gt;stop_flag != 0</code> 时 无法进入循环，同样循环结束，<code>uv_run</code> 函数返回。</p>
+<p>该函数就如官网给出的流程图一样简单</p>
+<p><img data-src="http://docs.libuv.org/en/v1.x/_images/loop_iteration.png" alt="loop_iteration"></p>
+<p>再看看几个关键的函数调用：</p>
+<ol>
+<li><code>uv__update_time(loop)</code>：对应图中 <code>Update loop time</code></li>
+<li><code>uv__run_timers(loop)</code>：对应图中 <code>Run due timers</code>，用于 <code>uv_timer_t</code>，见<a href="/posts/node.js/libuv/4-libuv-timer">Timer</a></li>
+<li><code>uv__run_pending(loop)</code>：对应图中 <code>Call pending callbacks</code>，用于 <code>uv__io_t</code>，见<a href="/posts/node.js/libuv/5-libuv-io-watcher">I&#x2F;O-Watcher</a></li>
+<li><code>uv__run_idle(loop)</code>：对应图中 <code>Run idle handles</code>，用于 <code>uv_idle_t</code></li>
+<li><code>uv__run_prepare(loop)</code>：对应图中 <code>Run prepare handles</code>，用于 <code>uv_prepare_t</code></li>
+<li><code>uv__io_poll(loop, timeout)</code>：对应图中 <code>Poll for I/O</code>，用于 <code>uv__io_t</code>，见<a href="/posts/node.js/libuv/5-libuv-io-watcher">I&#x2F;O-Watcher</a></li>
+<li><code>uv__run_check(loop)</code>：对应图中 <code>Run check handles</code>，用于 <code>uv_check_t</code></li>
+<li><code>uv__run_closing_handles(loop)</code>：对应图中 <code>Call close callbacks</code>，用于 <code>uv_handle_t</code>，见<a href="/posts/node.js/libuv/3-libuv-handle-and-request">Handle and Requst</a></li>
+</ol>
+<p>以上执行逻辑正好和文档中的各个执行阶段相对应，文档中描述的各个执行阶段分别对应了不同的函数调用。整个循环迭代的不同阶段，对应于不同类型&#x2F;状态的 handle 处理。除了用于 <code>uv_timer_t</code>、<code>uv_idle_t</code>、<code>uv_prepare_t</code>、<code>uv_check_t</code> 这四种类型的 handle 处理的几个阶段之外，没看到其他 handle 相关内容，倒是有个 <code>uv__io_t</code> 的处理，这是前文所提到的 libuv 内部关于I&#x2F;O观察者的一个基本抽象，所有其他的 <code>handle</code> 都可以当做是一个I&#x2F;O观察者，类似于双重继承。</p>
+<p>如果这个函数处于一直不断的循环状态，所在进程岂不是会一直占用CPU？实际上不会这样的，因为线程会在 <code>uv__io_poll(loop, timeout)</code> 这个函数内部因为阻塞而挂起，挂起的时间主要由下一次到来的定时器决定。在线程挂起这段时间内，不会占用CPU。</p>
+<p><code>uv_run</code> 启动事件循环，才使所有活动状态的 <code>handle</code> 开始工作，否则所有 <code>handle</code> 都是静止的，这一步就是 libuv 启动的按钮。 </p>
+<p>事件循环自身存在存活状态，通过 <code>uv__loop_alive</code> 判断，实现如下：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L331">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L331</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">uv__loop_alive</span><span class="params">(<span class="type">const</span> <span class="type">uv_loop_t</span>* loop)</span> &#123;</span><br><span class="line">  <span class="keyword">return</span> uv__has_active_handles(loop) ||</span><br><span class="line">         uv__has_active_reqs(loop) ||</span><br><span class="line">         loop-&gt;closing_handles != <span class="literal">NULL</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>uv__loop_alive</code> 判断 <code>loop</code> 是否是存活状态，满足以下三种条件之一即是存活状态：</p>
+<ul>
+<li>存在活跃的 handle</li>
+<li>存在活跃的 request</li>
+<li>正在关闭的 handle 列表不为空</li>
+</ul>
+<p>所以，若想成功事件事件循环一直不断的运行而不退出，必须在 <code>uv_run</code> 之前想事件循环里放入处于活跃状态的 <code>handle</code> 或 <code>request</code>。</p>
+<p>在 <code>uv_loop_t</code> 结构中，存在记录处于活动状态的 <code>handle</code> 和 <code>request</code> 的计数器，所以通过简单的判断数量即可，实现如下：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> uv__has_active_handles(loop)                                          \</span></span><br><span class="line"><span class="meta">  ((loop)-&gt;active_handles &gt; 0)</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> uv__has_active_reqs(loop)                                             \</span></span><br><span class="line"><span class="meta">  ((loop)-&gt;active_reqs.count &gt; 0)</span></span><br></pre></td></tr></table></figure>
+
+<p>另外，除了存活状态之外，<code>loop</code> 还存在一个 <code>stop_flag</code> 字段 标识 <code>loop</code> 是否处于<code>关闭</code>状态。</p>
+<p>所以，当 <code>loop</code> 中没有活动的 <code>handle</code> 和 <code>request</code> 时 或者 关闭标识开启时，事件循环跳出。</p>
+<p>libuv 在运行时 有三种模式：对应模式的用途看文档上对应的描述即可，<a target="_blank" rel="noopener" href="http://docs.libuv.org/en/v1.x/loop.html#c.uv_run">uv_run</a>。</p>
+<p>在 Run 的过程中，多次调用 <code>uv__update_time</code> 来更新时间</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.x/src/unix/internal.h#L288">https://github.com/libuv/libuv/blob/v1.x/src/unix/internal.h#L288</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">UV_UNUSED(<span class="type">static</span> <span class="type">void</span> uv__update_time(<span class="type">uv_loop_t</span>* loop)) &#123;</span><br><span class="line">  <span class="comment">/* Use a fast time source if available.  We only need millisecond precision.</span></span><br><span class="line"><span class="comment">   */</span></span><br><span class="line">  loop-&gt;time = uv__hrtime(UV_CLOCK_FAST) / <span class="number">1000000</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">uint64_t</span> <span class="title function_">uv__hrtime</span><span class="params">(<span class="type">uv_clocktype_t</span> type)</span> &#123;</span><br><span class="line">  <span class="keyword">return</span> gethrtime();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个函数通过调用 <code>gethrtime</code> 获取系统当前时间，精度非常高，单位是纳秒（ns），1纳秒等于十亿分之一秒。除 <code>1000000</code> 后的时间单位为 毫秒（ms）。</p>
+<p>时间对 libuv 来说非常重要，很多机制依赖于这个时间，比如定时器，后续的分析中，我们将会看到相关的利用。</p>
+<p>在事件循环中，还有一个 <code>timeout</code>，这个值用于控制 <code>uv__io_poll(loop, timeout)</code> 的挂起时长，这个变量的值是通过 <code>uv_backend_timeout</code> 来获取的，源码如下：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L311">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L311</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_backend_timeout</span><span class="params">(<span class="type">const</span> <span class="type">uv_loop_t</span>* loop)</span> &#123;</span><br><span class="line">  <span class="keyword">if</span> (loop-&gt;stop_flag != <span class="number">0</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (!uv__has_active_handles(loop) &amp;&amp; !uv__has_active_reqs(loop))</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (!QUEUE_EMPTY(&amp;loop-&gt;idle_handles))</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (!QUEUE_EMPTY(&amp;loop-&gt;pending_queue))</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (loop-&gt;closing_handles)</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">return</span> uv__next_timeout(loop);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>uv_backend_timeout</code> 在多个情况下都返回 <code>0</code>，这些情况表明不需要等待超时，如果前面的条件都不满足，会通过 <code>uv__next_timeout</code> 计算 <code>timeout</code>，源码如下：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/timer.c#L137">https://github.com/libuv/libuv/blob/v1.28.0/src/timer.c#L137</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv__next_timeout</span><span class="params">(<span class="type">const</span> <span class="type">uv_loop_t</span>* loop)</span> &#123;</span><br><span class="line">  <span class="type">const</span> <span class="class"><span class="keyword">struct</span> <span class="title">heap_node</span>* <span class="title">heap_node</span>;</span></span><br><span class="line">  <span class="type">const</span> <span class="type">uv_timer_t</span>* handle;</span><br><span class="line">  <span class="type">uint64_t</span> diff;</span><br><span class="line"></span><br><span class="line">  heap_node = heap_min(timer_heap(loop));</span><br><span class="line">  <span class="keyword">if</span> (heap_node == <span class="literal">NULL</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="number">-1</span>; <span class="comment">/* block indefinitely */</span></span><br><span class="line"></span><br><span class="line">  handle = container_of(heap_node, <span class="type">uv_timer_t</span>, heap_node);</span><br><span class="line">  <span class="keyword">if</span> (handle-&gt;timeout &lt;= loop-&gt;time)</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  diff = handle-&gt;timeout - loop-&gt;time;</span><br><span class="line">  <span class="keyword">if</span> (diff &gt; INT_MAX)</span><br><span class="line">    diff = INT_MAX;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">return</span> (<span class="type">int</span>) diff;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>uv__next_timeout</code> 有两种 情况：</p>
+<ul>
+<li>堆为空，返回 <code>-1</code></li>
+<li>堆非空，返回 <code>堆顶定时器</code> 和 <code>当前时间的差值</code>，但是差值不能越界。</li>
+</ul>
+<p>综合在一起，<code>uv_backend_timeout</code> 有可能返回 <code>-1</code> <code>0</code> <code>正整数</code>。</p>
+<p>可以看到 <code>timeout</code> 作为参数传递给了 <code>uv__io_poll</code>，而 <code>timeout</code>  正好作为 <code>epoll_pwait</code> 的超时时间，所以，这个 <code>timeout</code> 的作用主要是使 <code>epoll_pwait</code> 能够有一个合理的超时时间:</p>
+<ul>
+<li>当 <code>timeout</code> 为 <code>-1</code> 的时候这个函数会无限期的阻塞下去；</li>
+<li>当 <code>timeout</code> 为 <code>0</code> 的时候，就算没有任何事件，也会立刻返回，当没有任何需要等待的资源时，<code>timeout</code> 刚好为 <code>0</code>；</li>
+<li>当 <code>timeout</code> 等于 <code>正整数</code> 的时候，将会阻塞 <code>timeout</code> 毫秒，或有I&#x2F;O事件产生。</li>
+</ul>
+<p><code>epoll_pwait</code> 要在定时器时间到来时返回以进入下一次事件循环处理定时器，如果不能返回，将会导致定时任务不能按时得到处理，即使是按时返回，也不一定能够那是处理，因为 <code>uv__io_poll</code> 之后还有其他逻辑代码要执行，甚至是有可能是耗时计算，所以，Node.js 中定时器是不精确的，浏览器中类似。</p>
+<p>在 <code>UV_RUN_ONCE</code> 模式下，因为循环会直接跳出，不会再次进入循环处理定时器，所以需要在这种模式下，需要处理额外处理定时器。</p>
+<p>至此，事件循环的大逻辑已经分析完成了，后续，将会在各类型的 <code>handle</code> 的处理逻辑中展开对事件循环各阶段的内容分析。</p>
+<h2 id="Stop"><a href="#Stop" class="headerlink" title="Stop"></a>Stop</h2><p>Stop 将使事件循环在下一次循环因不满条件而无法进入，源码如下：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.c#L517">https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.c#L517</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">uv_stop</span><span class="params">(<span class="type">uv_loop_t</span>* loop)</span> &#123;</span><br><span class="line">  loop-&gt;stop_flag = <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>调用 <code>uv_stop</code> 后，事件循环同样无法进入，程序退出。</p>
+<p>以上，我们分析了事件循环执行的流程。</p>
+<hr>
+<p><a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/tree/master/node.js/libuv/2-libuv-event-loop.md" >查看源文件</a>&nbsp;&nbsp;<a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/edit/master/node.js/libuv/2-libuv-event-loop.md">编辑源文件</a></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>liuyanjie
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://blog.butonly.com/posts/node.js/libuv/2-libuv-event-loop/" title="libuv源码分析（二）事件循环（Eventloop）">https://blog.butonly.com/posts/node.js/libuv/2-libuv-event-loop/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/libuv/" rel="tag"># libuv</a>
+              <a href="/tags/node-js/" rel="tag"># node.js</a>
+              <a href="/tags/eventloop/" rel="tag"># eventloop</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/posts/node.js/libuv/1-libuv-overview/" rel="prev" title="libuv源码分析（一）全局概览（Overview）">
+                  <i class="fa fa-angle-left"></i> libuv源码分析（一）全局概览（Overview）
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/posts/node.js/libuv/3-libuv-handle-and-request/" rel="next" title="libuv源码分析（三）资源抽象：Handle 和 Request">
+                  libuv源码分析（三）资源抽象：Handle 和 Request <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    
+  <div class="comments" id="disqus_thread">
+    <noscript>Please enable JavaScript to view the comments powered by Disqus.</noscript>
+  </div>
+  
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2018 – 
+    <span itemprop="copyrightYear">2025</span>
+    <span class="with-love">
+      <i class="heartbeat"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">liuyanjie</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">166k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:31</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+  <a href="https://github.com/c-cc-cc" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+<script class="next-config" data-name="disqus" type="application/json">{"enable":true,"shortname":"liuyanjie","count":true,"lazyload":true,"i18n":{"disqus":"disqus"}}</script>
+<script src="/js/third-party/comments/disqus.js" defer></script>
+
+</body>
+</html>

@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)"><meta name="generator" content="Hexo 8.1.1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png">
+  <link rel="mask-icon" href="/favicon.png" color="#222">
+  <link rel="manifest" href="/manifest.json">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.css" integrity="sha256-gkQVf8UKZgQ0HyuxL/VnacadJ+D2Kox2TCEBuNQg5+w=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"blog.butonly.com","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.26.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"tomorrow-night-bright"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":true,"pangu":true,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"algolia":{"appID":"FRAAR0AUP0","apiKey":"459ace1d7f5aabfa15b4f89baba340b3","indexName":"blog.butonly.com","hits":{"per_page":10}}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="在 libuv 内部，对所有IO操作进行了统一的抽象，在底层的操作系统IO操作基础上，结合事件循环机制，实现了IO观察者，对应结构体 uv__io_s。其他 handle 通过内嵌I&#x2F;O观察者的方式获得IO的监测能力，例如有 uv_stream_t、uv_udp_t、uv_poll_t 及 uv_stream_t 的派生类型 uv_tcp_t、uv_pipe_t、uv_tty_t。uv_">
+<meta property="og:type" content="article">
+<meta property="og:title" content="libuv源码分析（五）IO观察者（io_watcher）">
+<meta property="og:url" content="https://blog.butonly.com/posts/node.js/libuv/5-libuv-io-watcher/index.html">
+<meta property="og:site_name" content="liuyanjie&#39;s blog">
+<meta property="og:description" content="在 libuv 内部，对所有IO操作进行了统一的抽象，在底层的操作系统IO操作基础上，结合事件循环机制，实现了IO观察者，对应结构体 uv__io_s。其他 handle 通过内嵌I&#x2F;O观察者的方式获得IO的监测能力，例如有 uv_stream_t、uv_udp_t、uv_poll_t 及 uv_stream_t 的派生类型 uv_tcp_t、uv_pipe_t、uv_tty_t。uv_">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2019-04-23T07:00:05.000Z">
+<meta property="article:modified_time" content="2019-07-24T07:24:34.675Z">
+<meta property="article:author" content="liuyanjie">
+<meta property="article:tag" content="eventloop">
+<meta property="article:tag" content="libuv">
+<meta property="article:tag" content="node.js">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://blog.butonly.com/posts/node.js/libuv/5-libuv-io-watcher/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://blog.butonly.com/posts/node.js/libuv/5-libuv-io-watcher/","path":"posts/node.js/libuv/5-libuv-io-watcher/","title":"libuv源码分析（五）IO观察者（io_watcher）"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>libuv源码分析（五）IO观察者（io_watcher） | liuyanjie's blog</title>
+  
+    <script async src="https://www.googletagmanager.com/gtag/js?id=014348069229275019795:-z92dm0sjiy"></script>
+  <script class="next-config" data-name="google_analytics" type="application/json">{"tracking_id":"014348069229275019795:-z92dm0sjiy","only_pageview":false,"measure_protocol_api_secret":null}</script>
+  <script src="/js/third-party/analytics/google-analytics.js" defer></script>
+
+  <script src="/js/third-party/analytics/baidu-analytics.js" defer></script>
+  <script async src="https://hm.baidu.com/hm.js?4cd57e104d0d9f5862dd91d0acdb9eee"></script>
+
+
+
+
+
+
+
+  
+  <script size="300" alpha="0.6" zIndex="-1" src="https://cdn.jsdelivr.net/npm/ribbon.js@1.0.2/dist/ribbon.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.umd.js" integrity="sha256-a+H7FYzJv6oU2hfsfDGM2Ohw/cR9v+hPfxHCLdmCrE8=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/lozad@1.16.0/dist/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/pangu@7.2.0/dist/browser/pangu.umd.js" integrity="sha256-JnmRRnJK7DC6RQJbAJb6AXOM9OmWzS6z8eYultk/48Y=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script><script src="/js/bookmark.js" defer></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/algoliasearch@5.36.0/dist/lite/builds/browser.umd.js" integrity="sha256-o49zoHLDPBm9WLg6AiliAVi3axCRTqe3ltTxLvhzAVg=" crossorigin="anonymous" defer></script><script src="/js/third-party/search/algolia-search.js" defer></script>
+
+  <script class="next-config" data-name="pdf" type="application/json">{"object_url":{"url":"https://cdn.jsdelivr.net/npm/pdfobject@2.3.1/pdfobject.min.js","integrity":"sha256-jI72I8ZLVflVOisZIOaLvRew3tyvzeu6aZXFm7P7dEo="},"url":"/lib/pdf/web/viewer.html"}</script>
+  <script src="/js/third-party/tags/pdf.js" defer></script>
+
+  <script class="next-config" data-name="mermaid" type="application/json">{"enable":true,"theme":"forest","js":{"url":"https://cdn.jsdelivr.net/npm/mermaid@11.10.1/dist/mermaid.min.js","integrity":"sha256-BmQmdWDS8X2OTbrwELWK366LV6escyWhHHe0XCTU/Hk="}}</script>
+  <script src="/js/third-party/tags/mermaid.js" defer></script>
+
+
+  <script src="/js/third-party/fancybox.js" defer></script>
+
+
+
+  
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+<link rel="alternate" href="/atom.xml" title="liuyanjie's blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">liuyanjie's blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <img class="custom-logo-image" src="/logo.png" alt="liuyanjie's blog">
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="home fa-fw"></i>首页</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">6</span></a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+      <div class="search-header">
+        <span class="search-icon">
+          <i class="fa fa-search"></i>
+        </span>
+        <div class="search-input-container">
+          <input autocomplete="off" autocapitalize="off" maxlength="80"
+                placeholder="搜索..." spellcheck="false"
+                type="search" class="search-input">
+        </div>
+        <span class="popup-btn-close" role="button">
+          <i class="fa fa-times-circle"></i>
+        </span>
+      </div>
+      <div class="search-result-container">
+        <div class="search-result-icon">
+          <i class="fab fa-algolia fa-5x"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#uv-io-s"><span class="nav-number">1.</span> <span class="nav-text">uv__io_s</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Init"><span class="nav-number">2.</span> <span class="nav-text">Init</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#uv-poll-init"><span class="nav-number">2.1.</span> <span class="nav-text">uv_poll_init</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#uv-io-init"><span class="nav-number">2.2.</span> <span class="nav-text">uv__io_init</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#uv-poll-io"><span class="nav-number">2.3.</span> <span class="nav-text">uv__poll_io</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Start"><span class="nav-number">3.</span> <span class="nav-text">Start</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#uv-poll-start"><span class="nav-number">3.1.</span> <span class="nav-text">uv_poll_start</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#uv-io-start"><span class="nav-number">3.2.</span> <span class="nav-text">uv__io_start</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Stop"><span class="nav-number">4.</span> <span class="nav-text">Stop</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Close"><span class="nav-number">5.</span> <span class="nav-text">Close</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Run%EF%BC%9APoll-for-I-O"><span class="nav-number">6.</span> <span class="nav-text">Run：Poll for I&#x2F;O</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="liuyanjie"
+      src="/avatar.png">
+  <p class="site-author-name" itemprop="name">liuyanjie</p>
+  <div class="site-description" itemprop="description">KISS DRY</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">13</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/liuyanjie" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;liuyanjie" rel="noopener me" target="_blank"><i class="github fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="/liuyj619@gmail.com" title="E-Mail → liuyj619@gmail.com" rel="noopener me"><i class="envelope fa-fw"></i></a>
+      </span>
+  </div>
+  <div class="cc-license animated" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="https://cdn.jsdelivr.net/npm/@creativecommons/vocabulary@2020.11.3/assets/license_badges/small/by_nc_sa.svg" alt="Creative Commons"></a>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://blog.butonly.com/posts/node.js/libuv/5-libuv-io-watcher/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/avatar.png">
+      <meta itemprop="name" content="liuyanjie">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liuyanjie's blog">
+      <meta itemprop="description" content="KISS DRY">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="libuv源码分析（五）IO观察者（io_watcher） | liuyanjie's blog">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          libuv源码分析（五）IO观察者（io_watcher）
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2019-04-23 15:00:05" itemprop="dateCreated datePublished" datetime="2019-04-23T15:00:05+08:00">2019-04-23</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2019-07-24 15:24:34" itemprop="dateModified" datetime="2019-07-24T15:24:34+08:00">2019-07-24</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" itemprop="url" rel="index"><span itemprop="name">源码分析</span></a>
+        </span>
+    </span>
+
+  
+  
+  <span class="post-meta-item">
+    
+      <span class="post-meta-item-icon">
+        <i class="far fa-comment"></i>
+      </span>
+      <span class="post-meta-item-text">Disqus：</span>
+    
+    <a title="disqus" href="/posts/node.js/libuv/5-libuv-io-watcher/#disqus_thread" itemprop="discussionUrl">
+      <span class="post-comments-count disqus-comment-count" data-disqus-identifier="posts/node.js/libuv/5-libuv-io-watcher/" itemprop="commentCount"></span>
+    </a>
+  </span>
+  
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>19k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>17 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>在 libuv 内部，对所有IO操作进行了统一的抽象，在底层的操作系统IO操作基础上，结合事件循环机制，实现了IO观察者，对应结构体 <code>uv__io_s</code>。其他 <code>handle</code> 通过内嵌I&#x2F;O观察者的方式获得IO的监测能力，例如有 <code>uv_stream_t</code>、<code>uv_udp_t</code>、<code>uv_poll_t</code> 及 <code>uv_stream_t</code> 的派生类型 <code>uv_tcp_t</code>、<code>uv_pipe_t</code>、<code>uv_tty_t</code>。<code>uv_stream_t</code> 是一个抽象基类，一般不直接使用。内嵌IO观察者的 <code>handle</code> 本身就是IO观察者，和面向对象语言中常提到的 <code>has-a</code> 是一样的，所以，可以说 <code>uv_stream_t</code> 是一个I&#x2F;O观察者，它的派生类也是I&#x2F;O观察者。这类似于多重继承，即继承 <code>uv_handle_t</code>，又继承了 <code>uv__io_t</code>，所以即是 <code>handle</code>，又是 <code>I/O观察者</code>。</p>
+<p>应用程序 通过创建并初始化 <code>handle</code> 或 <code>request</code> 的方式创建并初始化并注册I&#x2F;O观察者，注册后被插入到 <code>loop-watchers</code> 队列中，并在 <code>Start</code> 后将I&#x2F;O观察者标记为准备状态，在事件循环启动后对 <code>loop-watchers</code> 队列中所有I&#x2F;O观察者关注的文件描述符进行轮询（linux下使用<code>epoll</code>）并在I&#x2F;O事件触发时调用对应的回调函数。</p>
+<p>libuv 的 <code>15</code> 个 <code>handle</code> 类型中，属于I&#x2F;O观察者就有 <code>7</code> 个，还有几个类型的 <code>handle</code> 虽然不直接内嵌I&#x2F;O观察者，但内部实现依然依赖I&#x2F;O观察者。实际上，只有 <code>uv_timer_t</code>、<code>uv_prepare_t</code>、<code>uv_check_t</code>、<code>uv_idle_t</code> 这 <code>4</code> 个 <code>handle</code> 与I&#x2F;O观察者无直接关系。足以见I&#x2F;O观察者在 libuv 中的重要性，理解I&#x2F;O观察者对于理解 libuv 甚至是 node.js 都是十分重要的。</p>
+<p>下面开始讲其实现细节。</p>
+<h2 id="uv-io-s"><a href="#uv-io-s" class="headerlink" title="uv__io_s"></a><code>uv__io_s</code></h2><p><code>uv__io_s</code> 结构体 即为 I&#x2F;O观察者 的抽象数据结构：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv__io_s</span> <span class="title">uv__io_t</span>;</span></span><br><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">uv__io_s</span> &#123;</span></span><br><span class="line">  uv__io_cb cb;</span><br><span class="line">  <span class="type">void</span>* pending_queue[<span class="number">2</span>];</span><br><span class="line">  <span class="type">void</span>* watcher_queue[<span class="number">2</span>];</span><br><span class="line">  <span class="type">unsigned</span> <span class="type">int</span> pevents; <span class="comment">/* Pending event mask i.e. mask at next tick. */</span></span><br><span class="line">  <span class="type">unsigned</span> <span class="type">int</span> events;  <span class="comment">/* Current event mask. */</span></span><br><span class="line">  <span class="type">int</span> fd;</span><br><span class="line">  UV_IO_PRIVATE_PLATFORM_FIELDS</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>主要字段用途介绍：</p>
+<ul>
+<li><code>fd</code>：感兴趣的 文件描述符；</li>
+<li><code>cb</code>：当文件描述符 <code>fd</code> 上有I&#x2F;O事件发生时，调用该函数进行处理，注意，该函数的类型 <code>uv__io_cb</code> 是内部类型，并不对外暴露，所以 <code>cb</code> 自然也是内部提供的。libuv针对不同类型的IO观察者实现了多个不同的 <code>cb</code> 函数；</li>
+<li><code>watcher_queue</code>：作为队列节点，插入到 <code>loop-&gt;watcher_queue</code> 队列中，所有的I&#x2F;O观察者都会被插入到这个队列中；</li>
+<li><code>pending_queue</code>：作为队列节点，插入到 <code>loop-&gt;pending_queue</code> 队列中，所有被挂起的I&#x2F;O观察者都会被插入到这个队列中；</li>
+<li><code>pevents</code>：下次事件循环使用的事件掩码；</li>
+<li><code>events</code>：当前正在使用的事件掩码。<code>events |= pevents</code>。</li>
+</ul>
+<p>在 <code>uv_stream_t</code>（包括 <code>uv_tcp_t</code>、<code>uv_pipe_t</code>、<code>uv_tty_t</code>）、<code>uv_udp_t</code>、<code>uv_poll_t</code> 类型结构体内部都内嵌了 <code>uv__io_t</code>：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">uv__io_t</span> io_watcher;</span><br></pre></td></tr></table></figure>
+
+<p>另外，在 <code>uv_loop_s</code> 中，同样也内嵌了多个 <code>uv__io_t</code> 关联字段：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/include/uv/unix.h#L218">https://github.com/libuv/libuv/blob/v1.28.0/include/uv/unix.h#L218</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_LOOP_PRIVATE_FIELDS                                                \</span></span><br><span class="line"><span class="meta">  uv__io_t** watchers;                                                        \</span></span><br><span class="line"><span class="meta">  unsigned int nwatchers;                                                     \</span></span><br><span class="line"><span class="meta">  unsigned int nfds;                                                          \</span></span><br><span class="line"><span class="meta">  uv__io_t async_io_watcher;                                                  \</span></span><br><span class="line"><span class="meta">  uv__io_t signal_io_watcher;                                                 \</span></span><br><span class="line"><span class="meta">  UV_PLATFORM_LOOP_FIELDS                                                     \</span></span><br></pre></td></tr></table></figure>
+
+<p>linux 下的 <code>UV_PLATFORM_LOOP_FIELDS</code> 定义：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_PLATFORM_LOOP_FIELDS                                               \</span></span><br><span class="line"><span class="meta">  uv__io_t inotify_read_watcher;                                              \</span></span><br><span class="line"><span class="meta">  void* inotify_watchers;                                                     \</span></span><br><span class="line"><span class="meta">  int inotify_fd;                                                             \</span></span><br></pre></td></tr></table></figure>
+
+<p>主要字段用途介绍：</p>
+<ul>
+<li><code>watchers</code>：咋看是一个二级指针，实际上是当做数组来使用的，数组的每一项存储了 <code>uv__io_t*</code> 类型的指针，使用示例：<code>w = loop-&gt;watchers[i];</code>，所有的I&#x2F;O观察者都有以文件描述符 <code>fd</code> 作为数组下标保存在这个数组中，可以通过 <code>fd</code> 快速找到对应的I&#x2F;O观察者。请仔细理解C语言数组和指针的关系，这里不能当做二级指针理解；<br>注意：<ul>
+<li>该指针指向的内存空间是动态分配的，以适应I&#x2F;O观察者的变化，动态分配算法见函数 <code>maybe_resize</code>；</li>
+<li>注意：实际分别长度为 <code>nwatchers + 2</code>；</li>
+</ul>
+</li>
+<li><code>nwatchers</code>：记录了能容纳的IO观察者的数量，<code>len(watchers) == nwatchers + 2</code>；</li>
+<li><code>nfds</code>：记录了 <code>watchers</code> 中文件描述符的数量，也是实际使用量；</li>
+<li><code>async_io_watcher</code>：<code>loop</code> 内嵌的I&#x2F;O观察者，这个I&#x2F;O观察者用于其他异步任务（运行在其他线程中）通过IO与主事件循环进行通讯；</li>
+<li><code>signal_io_watcher</code>：<code>loop</code> 内嵌的I&#x2F;O观察者，这个I&#x2F;O观察者用于接收信号IO事件的。在 libuv 中，信号也被异步化到事件循环中去处理了；</li>
+<li><code>inotify_read_watcher</code>：<code>UV_PLATFORM_LOOP_FIELDS</code> 宏在 linux 平台下展开之后会有一个 <code>inotify_read_watcher</code>，这个是用来在 linux 下支持 <code>uv_fs_event_t</code>的，在其他 <code>uni*</code> 平台上，有对应的 <code>event_watcher</code>。</li>
+</ul>
+<p>除以上介绍的 <code>handle</code> 外，<code>uv_fs_poll_t</code> 实际通过 <code>uv_async_t</code> 来支持其文件状态轮询的。</p>
+<p>至此，我们已经把所有和I&#x2F;O观察者相关的 <code>handle</code> 都提及到了，可以发现，libuv 中绝大多数 <code>handle</code> 都是I&#x2F;O相关的，少部分 <code>handle</code> 简介通过I&#x2F;O观察者实现功能。所以，libuv 可以说是专门为I&#x2F;O而设计的，正如文档中所诉，它就是专注于异步I&#x2F;O的程序库。下面，我们将介绍I&#x2F;O观察者的工作原理，理解了I&#x2F;O观察者就可以很容易的弄懂大部分相关的 <code>handle</code> 的工作原理。</p>
+<p>因为 <code>uv__io_t</code> 是内部结构，并不对外暴露，所以我们以 <code>uv_poll_t</code> 作为入口，探索其内部的 <code>uv__io_t</code> 工作原理。</p>
+<p><code>uv_poll_t</code> 用于监控文件描述符的 <code>可读/可写</code> 状态，和 <code>poll</code> 系统调用的用途类型，不过 <code>uv_poll_t</code> 是异步非阻塞，而操作系统的原生 <code>poll</code> 函数是同步阻塞的。</p>
+<p><code>uv_poll_t</code> 是I&#x2F;O观察者的简单封装后的应用程序接口，它只关心状态变化并调用用户层代码，I&#x2F;O事件之后将由外部库处理。相比之下，<code>uv_stream_t</code> 则复杂的多，<code>uv_stream_t</code> 更进一步封装了数据读写操作等方面的能力，并将数据派发给不同类型的派生 <code>handle</code> 处理。</p>
+<h2 id="Init"><a href="#Init" class="headerlink" title="Init"></a>Init</h2><h3 id="uv-poll-init"><a href="#uv-poll-init" class="headerlink" title="uv_poll_init"></a>uv_poll_init</h3><p>使用文件描述符初始化 <code>poll</code>。</p>
+<p>以下是 <code>uv_poll_init</code> 的具体实现：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/poll.c#L67">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/poll.c#L67</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_poll_init</span><span class="params">(<span class="type">uv_loop_t</span>* loop, <span class="type">uv_poll_t</span>* handle, <span class="type">int</span> fd)</span> &#123;</span><br><span class="line">  <span class="type">int</span> err;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (uv__fd_exists(loop, fd))</span><br><span class="line">    <span class="keyword">return</span> UV_EEXIST;</span><br><span class="line"></span><br><span class="line">  err = uv__io_check_fd(loop, fd);</span><br><span class="line">  <span class="keyword">if</span> (err)</span><br><span class="line">    <span class="keyword">return</span> err;</span><br><span class="line"></span><br><span class="line">  <span class="comment">/* If ioctl(FIONBIO) reports ENOTTY, try fcntl(F_GETFL) + fcntl(F_SETFL).</span></span><br><span class="line"><span class="comment">   * Workaround for e.g. kqueue fds not supporting ioctls.</span></span><br><span class="line"><span class="comment">   */</span></span><br><span class="line">  err = uv__nonblock(fd, <span class="number">1</span>);</span><br><span class="line">  <span class="keyword">if</span> (err == UV_ENOTTY)</span><br><span class="line">    <span class="keyword">if</span> (uv__nonblock == uv__nonblock_ioctl)</span><br><span class="line">      err = uv__nonblock_fcntl(fd, <span class="number">1</span>);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (err)</span><br><span class="line">    <span class="keyword">return</span> err;</span><br><span class="line"></span><br><span class="line">  uv__handle_init(loop, (<span class="type">uv_handle_t</span>*) handle, UV_POLL);</span><br><span class="line">  uv__io_init(&amp;handle-&gt;io_watcher, uv__poll_io, fd);</span><br><span class="line">  handle-&gt;poll_cb = <span class="literal">NULL</span>;</span><br><span class="line">  <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>以上代代码先是检查了文件描述符是否存在、文件描述符是否已经纳入监控等，然后调用 <code>uv__handle_init</code> 和 <code>uv__io_init</code> 进行基类初始化，<code>uv__io_init</code> 是I&#x2F;O观察者的初始化函数。</p>
+<h3 id="uv-io-init"><a href="#uv-io-init" class="headerlink" title="uv__io_init"></a><code>uv__io_init</code></h3><p>直接上源码：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L805">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L805</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">uv__io_init</span><span class="params">(<span class="type">uv__io_t</span>* w, uv__io_cb cb, <span class="type">int</span> fd)</span> &#123;</span><br><span class="line">  assert(cb != <span class="literal">NULL</span>);</span><br><span class="line">  assert(fd &gt;= <span class="number">-1</span>);</span><br><span class="line">  QUEUE_INIT(&amp;w-&gt;pending_queue);</span><br><span class="line">  QUEUE_INIT(&amp;w-&gt;watcher_queue);</span><br><span class="line">  w-&gt;cb = cb;</span><br><span class="line">  w-&gt;fd = fd;</span><br><span class="line">  w-&gt;events = <span class="number">0</span>;</span><br><span class="line">  w-&gt;pevents = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">if</span> defined(UV_HAVE_KQUEUE)</span></span><br><span class="line">  w-&gt;rcount = <span class="number">0</span>;</span><br><span class="line">  w-&gt;wcount = <span class="number">0</span>;</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span> <span class="comment">/* defined(UV_HAVE_KQUEUE) */</span></span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>uv__io_init</code> 初始化了两个队列，绑定了回调函数和文件描述符，基本工作就做完了。</p>
+<p>调用 <code>uv__io_init</code> 时传递的 <code>uv__poll_io</code> 是 libuv 内部实现的，用于在I&#x2F;O事件到来时调用。</p>
+<h3 id="uv-poll-io"><a href="#uv-poll-io" class="headerlink" title="uv__poll_io"></a><code>uv__poll_io</code></h3><p>如果有I&#x2F;O事件产生，<code>uv__poll_io</code> 会被 libuv 调用。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">uv__poll_io</span><span class="params">(<span class="type">uv_loop_t</span>* loop, <span class="type">uv__io_t</span>* w, <span class="type">unsigned</span> <span class="type">int</span> events)</span> &#123;</span><br><span class="line">  <span class="type">uv_poll_t</span>* handle;</span><br><span class="line">  <span class="type">int</span> pevents;</span><br><span class="line"></span><br><span class="line">  handle = container_of(w, <span class="type">uv_poll_t</span>, io_watcher);</span><br><span class="line"></span><br><span class="line">  <span class="comment">/*</span></span><br><span class="line"><span class="comment">   * As documented in the kernel source fs/kernfs/file.c #780</span></span><br><span class="line"><span class="comment">   * poll will return POLLERR|POLLPRI in case of sysfs</span></span><br><span class="line"><span class="comment">   * polling. This does not happen in case of out-of-band</span></span><br><span class="line"><span class="comment">   * TCP messages.</span></span><br><span class="line"><span class="comment">   *</span></span><br><span class="line"><span class="comment">   * The above is the case on (at least) FreeBSD and Linux.</span></span><br><span class="line"><span class="comment">   *</span></span><br><span class="line"><span class="comment">   * So to properly determine a POLLPRI or a POLLERR we need</span></span><br><span class="line"><span class="comment">   * to check for both.</span></span><br><span class="line"><span class="comment">   */</span></span><br><span class="line">  <span class="keyword">if</span> ((events &amp; POLLERR) &amp;&amp; !(events &amp; UV__POLLPRI)) &#123;</span><br><span class="line">    uv__io_stop(loop, w, POLLIN | POLLOUT | UV__POLLRDHUP | UV__POLLPRI);</span><br><span class="line">    uv__handle_stop(handle);</span><br><span class="line">    handle-&gt;poll_cb(handle, UV_EBADF, <span class="number">0</span>);</span><br><span class="line">    <span class="keyword">return</span>;</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  pevents = <span class="number">0</span>;</span><br><span class="line">  <span class="keyword">if</span> (events &amp; POLLIN)</span><br><span class="line">    pevents |= UV_READABLE;</span><br><span class="line">  <span class="keyword">if</span> (events &amp; UV__POLLPRI)</span><br><span class="line">    pevents |= UV_PRIORITIZED;</span><br><span class="line">  <span class="keyword">if</span> (events &amp; POLLOUT)</span><br><span class="line">    pevents |= UV_WRITABLE;</span><br><span class="line">  <span class="keyword">if</span> (events &amp; UV__POLLRDHUP)</span><br><span class="line">    pevents |= UV_DISCONNECT;</span><br><span class="line"></span><br><span class="line">  handle-&gt;poll_cb(handle, <span class="number">0</span>, pevents);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>uv__poll_io</code> I&#x2F;O事件的时候会被调用，工作逻辑如下：</p>
+<ol>
+<li>首先通过 <code>container_of</code> 获取 <code>handle</code>；</li>
+<li>如果是一些异常的I&#x2F;O事件，则会进入 <code>Stop</code> 流程并调用 <code>handle-&gt;poll_cb</code>；</li>
+<li>将事件记录到 <code>pevents</code>；</li>
+<li>调用 <code>handle-&gt;poll_cb</code>。</li>
+</ol>
+<p><code>handle-&gt;poll_cb</code> 是在 <code>Start</code> 阶段设置的，所以 <code>uv__poll_io</code> 一定是在 <code>uv_poll_start</code> 调用后才能调用的，因为I&#x2F;O事件在 <code>uv_poll_start</code> 后的下一次事件循环才能被处理。</p>
+<p><code>uv__poll_io</code> 比较简单，可以说就是直接调用用户层提供的回调函数，正如 <code>uv_poll_t</code> 的用途一样，负责监控文件描述符状态变化，但是不负责处理。</p>
+<p>除了 <code>uv__poll_io</code> 外，还有多个同样功能的 <code>uv__io_cb</code> 类型的函数存在，他们用于不同的功能，通过全局搜索 <code>uv__io_init</code> 函数即可找到 <code>uv__io_init</code> 调用传递的不同 <code>uv__io_cb</code> 函数，如下：</p>
+<ul>
+<li><code>uv__signal_event</code>，用于处理 <code>loop-&gt;signal_io_watcher</code> 上的I&#x2F;O事件；</li>
+<li><code>uv__async_io</code>，用于处理 <code>loop-&gt;async_io_watcher</code> 上的I&#x2F;O事件；</li>
+<li><code>uv__stream_io</code>，用于处理 <code>stream_handle-&gt;io_watcher</code> 上的I&#x2F;O事件；</li>
+<li><code>uv__udp_io</code>，用于处理 <code>udp_handle-&gt;io_watcher</code> 上的I&#x2F;O事件。</li>
+</ul>
+<p>以上这些 <code>uv__io_cb</code> 函数就没有 <code>uv__poll_io</code> 的实现简单了，它们都有更复杂的处理逻辑，如在 <code>uv__stream_io</code> 中，开始对文件描述符进行数据读写。</p>
+<p>除了以上几个外，还有 <code>uv_fs_event_t</code> 相关I&#x2F;O观察者的 <code>uv__poll_io</code>，因各平台实现不同，<code>uv__poll_io</code> 也有不同版本，就不列举了。</p>
+<p>这些 <code>handle</code>，在 Init、Start、Stop、Close 等阶段多有都有不同，但是最大的不同还是在于I&#x2F;O事件的处理函数 <code>uv__io_cb</code> 的实现不同，也就是以上列出的函数不同。</p>
+<p>接下来，进入 <code>Start</code> 阶段。</p>
+<h2 id="Start"><a href="#Start" class="headerlink" title="Start"></a>Start</h2><h3 id="uv-poll-start"><a href="#uv-poll-start" class="headerlink" title="uv_poll_start"></a>uv_poll_start</h3><p>开始对文件描述符进行事件轮询</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_poll_start</span><span class="params">(<span class="type">uv_poll_t</span>* handle, <span class="type">int</span> pevents, uv_poll_cb poll_cb)</span> &#123;</span><br><span class="line">  <span class="type">int</span> events;</span><br><span class="line"></span><br><span class="line">  assert((pevents &amp; ~(UV_READABLE | UV_WRITABLE | UV_DISCONNECT |</span><br><span class="line">                      UV_PRIORITIZED)) == <span class="number">0</span>);</span><br><span class="line">  assert(!uv__is_closing(handle));</span><br><span class="line"></span><br><span class="line">  uv__poll_stop(handle);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (pevents == <span class="number">0</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  events = <span class="number">0</span>;</span><br><span class="line">  <span class="keyword">if</span> (pevents &amp; UV_READABLE)</span><br><span class="line">    events |= POLLIN;</span><br><span class="line">  <span class="keyword">if</span> (pevents &amp; UV_PRIORITIZED)</span><br><span class="line">    events |= UV__POLLPRI;</span><br><span class="line">  <span class="keyword">if</span> (pevents &amp; UV_WRITABLE)</span><br><span class="line">    events |= POLLOUT;</span><br><span class="line">  <span class="keyword">if</span> (pevents &amp; UV_DISCONNECT)</span><br><span class="line">    events |= UV__POLLRDHUP;</span><br><span class="line"></span><br><span class="line">  uv__io_start(handle-&gt;loop, &amp;handle-&gt;io_watcher, events);</span><br><span class="line">  uv__handle_start(handle);</span><br><span class="line">  handle-&gt;poll_cb = poll_cb;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其他部分不用太多解释了，直接看关键步骤：<code>uv__io_start</code></p>
+<h3 id="uv-io-start"><a href="#uv-io-start" class="headerlink" title="uv__io_start"></a>uv__io_start</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">uv__io_start</span><span class="params">(<span class="type">uv_loop_t</span>* loop, <span class="type">uv__io_t</span>* w, <span class="type">unsigned</span> <span class="type">int</span> events)</span> &#123;</span><br><span class="line">  assert(<span class="number">0</span> == (events &amp; ~(POLLIN | POLLOUT | UV__POLLRDHUP | UV__POLLPRI)));</span><br><span class="line">  assert(<span class="number">0</span> != events);</span><br><span class="line">  assert(w-&gt;fd &gt;= <span class="number">0</span>);</span><br><span class="line">  assert(w-&gt;fd &lt; INT_MAX);</span><br><span class="line"></span><br><span class="line">  w-&gt;pevents |= events;</span><br><span class="line">  maybe_resize(loop, w-&gt;fd + <span class="number">1</span>);</span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">if</span> !defined(__sun)</span></span><br><span class="line">  <span class="comment">/* The event ports backend needs to rearm all file descriptors on each and</span></span><br><span class="line"><span class="comment">   * every tick of the event loop but the other backends allow us to</span></span><br><span class="line"><span class="comment">   * short-circuit here if the event mask is unchanged.</span></span><br><span class="line"><span class="comment">   */</span></span><br><span class="line">  <span class="keyword">if</span> (w-&gt;events == w-&gt;pevents)</span><br><span class="line">    <span class="keyword">return</span>;</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (QUEUE_EMPTY(&amp;w-&gt;watcher_queue))</span><br><span class="line">    QUEUE_INSERT_TAIL(&amp;loop-&gt;watcher_queue, &amp;w-&gt;watcher_queue);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (loop-&gt;watchers[w-&gt;fd] == <span class="literal">NULL</span>) &#123;</span><br><span class="line">    loop-&gt;watchers[w-&gt;fd] = w;</span><br><span class="line">    loop-&gt;nfds++;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>关键步骤如下：</p>
+<ol>
+<li>将参数 <code>events</code> 或到 <code>w-&gt;pevents</code>，因为 <code>uv__io_start</code> 可以反复多次调用，相当于更新；</li>
+<li>按需扩容，判断当前的 <code>loop-&gt;watchers</code> 没有更多空间容纳 <code>fd</code> 及关联的I&#x2F;O观察者，如果没有，指数级扩容，并拷贝内容到新的内存空间；</li>
+<li>将 <code>w-&gt;watcher_queue</code> 连接到 <code>loop-&gt;watcher_queue</code> 队列尾部，所有I&#x2F;O观察者都被关联了起来。这里有个判断，为了防止重复操作。</li>
+<li>以 <code>w-&gt;fd</code> 为下标，将 <code>w</code> 保持到 <code>loop-&gt;watchers</code>，并更新引用计数 <code>loop-&gt;nfds</code>。</li>
+</ol>
+<p>至此，完成了I&#x2F;O观察者的准备工作，供事件循环处理。</p>
+<h2 id="Stop"><a href="#Stop" class="headerlink" title="Stop"></a>Stop</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_poll_stop</span><span class="params">(<span class="type">uv_poll_t</span>* handle)</span> &#123;</span><br><span class="line">  assert(!uv__is_closing(handle));</span><br><span class="line">  uv__poll_stop(handle);</span><br><span class="line">  <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">uv__poll_stop</span><span class="params">(<span class="type">uv_poll_t</span>* handle)</span> &#123;</span><br><span class="line">  uv__io_stop(handle-&gt;loop,</span><br><span class="line">              &amp;handle-&gt;io_watcher,</span><br><span class="line">              POLLIN | POLLOUT | UV__POLLRDHUP | UV__POLLPRI);</span><br><span class="line">  uv__handle_stop(handle);</span><br><span class="line">  uv__platform_invalidate_fd(handle-&gt;loop, handle-&gt;io_watcher.fd);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">uv__io_stop</span><span class="params">(<span class="type">uv_loop_t</span>* loop, <span class="type">uv__io_t</span>* w, <span class="type">unsigned</span> <span class="type">int</span> events)</span> &#123;</span><br><span class="line">  assert(<span class="number">0</span> == (events &amp; ~(POLLIN | POLLOUT | UV__POLLRDHUP | UV__POLLPRI)));</span><br><span class="line">  assert(<span class="number">0</span> != events);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (w-&gt;fd == <span class="number">-1</span>)</span><br><span class="line">    <span class="keyword">return</span>;</span><br><span class="line"></span><br><span class="line">  assert(w-&gt;fd &gt;= <span class="number">0</span>);</span><br><span class="line"></span><br><span class="line">  <span class="comment">/* Happens when uv__io_stop() is called on a handle that was never started. */</span></span><br><span class="line">  <span class="keyword">if</span> ((<span class="type">unsigned</span>) w-&gt;fd &gt;= loop-&gt;nwatchers)</span><br><span class="line">    <span class="keyword">return</span>;</span><br><span class="line"></span><br><span class="line">  w-&gt;pevents &amp;= ~events;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (w-&gt;pevents == <span class="number">0</span>) &#123;</span><br><span class="line">    QUEUE_REMOVE(&amp;w-&gt;watcher_queue);</span><br><span class="line">    QUEUE_INIT(&amp;w-&gt;watcher_queue);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (loop-&gt;watchers[w-&gt;fd] != <span class="literal">NULL</span>) &#123;</span><br><span class="line">      assert(loop-&gt;watchers[w-&gt;fd] == w);</span><br><span class="line">      assert(loop-&gt;nfds &gt; <span class="number">0</span>);</span><br><span class="line">      loop-&gt;watchers[w-&gt;fd] = <span class="literal">NULL</span>;</span><br><span class="line">      loop-&gt;nfds--;</span><br><span class="line">      w-&gt;events = <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="keyword">else</span> <span class="keyword">if</span> (QUEUE_EMPTY(&amp;w-&gt;watcher_queue))</span><br><span class="line">    QUEUE_INSERT_TAIL(&amp;loop-&gt;watcher_queue, &amp;w-&gt;watcher_queue);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>uv__io_stop</code> 实际上就是将I&#x2F;O观察者从 <code>loop</code> 上移除，避免事件循环继续处理这个I&#x2F;O观察者。</p>
+<h2 id="Close"><a href="#Close" class="headerlink" title="Close"></a>Close</h2><p><code>uv_poll_t</code> 并无 <code>close</code> 方法，但是存在 <code>uv__io_close</code> 方法，实现如下：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L882">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L882</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">uv__io_close</span><span class="params">(<span class="type">uv_loop_t</span>* loop, <span class="type">uv__io_t</span>* w)</span> &#123;</span><br><span class="line">  uv__io_stop(loop, w, POLLIN | POLLOUT | UV__POLLRDHUP | UV__POLLPRI);</span><br><span class="line">  QUEUE_REMOVE(&amp;w-&gt;pending_queue);</span><br><span class="line"></span><br><span class="line">  <span class="comment">/* Remove stale events for this file descriptor */</span></span><br><span class="line">  <span class="keyword">if</span> (w-&gt;fd != <span class="number">-1</span>)</span><br><span class="line">    uv__platform_invalidate_fd(loop, w-&gt;fd);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>调用了 <code>uv__io_stop</code> 完成 <code>Close</code>。</p>
+<h2 id="Run：Poll-for-I-O"><a href="#Run：Poll-for-I-O" class="headerlink" title="Run：Poll for I/O"></a>Run：<code>Poll for I/O</code></h2><p>I&#x2F;O观察者在事件循环启动后才会被真正的处理，主要是在 <code>uv__io_poll</code> 和 <code>uv__run_pending</code> 两个函数中处理的。</p>
+<p>以下为 <code>uv__io_poll</code> 实现代码（含注释），这部分代码可以说是 libuv 中最核心的代码，因为这部分实现了 libuv 最核心功能异步IO的支持，实现了IO事件的轮询与事件的派发。</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/linux-core.c#L190">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/linux-core.c#L190</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">uv__io_poll</span><span class="params">(<span class="type">uv_loop_t</span>* loop, <span class="type">int</span> timeout)</span> &#123;</span><br><span class="line">  <span class="comment">/* A bug in kernels &lt; 2.6.37 makes timeouts larger than ~30 minutes</span></span><br><span class="line"><span class="comment">   * effectively infinite on 32 bits architectures.  To avoid blocking</span></span><br><span class="line"><span class="comment">   * indefinitely, we cap the timeout and poll again if necessary.</span></span><br><span class="line"><span class="comment">   *</span></span><br><span class="line"><span class="comment">   * Note that &quot;30 minutes&quot; is a simplification because it depends on</span></span><br><span class="line"><span class="comment">   * the value of CONFIG_HZ.  The magic constant assumes CONFIG_HZ=1200,</span></span><br><span class="line"><span class="comment">   * that being the largest value I have seen in the wild (and only once.)</span></span><br><span class="line"><span class="comment">   */</span></span><br><span class="line">  <span class="type">static</span> <span class="type">const</span> <span class="type">int</span> max_safe_timeout = <span class="number">1789569</span>;</span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">epoll_event</span> <span class="title">events</span>[1024];</span></span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">epoll_event</span>* <span class="title">pe</span>;</span></span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">epoll_event</span> <span class="title">e</span>;</span></span><br><span class="line">  <span class="type">int</span> real_timeout;</span><br><span class="line">  QUEUE* q;</span><br><span class="line">  <span class="type">uv__io_t</span>* w;</span><br><span class="line">  <span class="type">sigset_t</span> sigset;</span><br><span class="line">  <span class="type">sigset_t</span>* psigset;</span><br><span class="line">  <span class="type">uint64_t</span> base;</span><br><span class="line">  <span class="type">int</span> have_signals;</span><br><span class="line">  <span class="type">int</span> nevents;</span><br><span class="line">  <span class="type">int</span> count;</span><br><span class="line">  <span class="type">int</span> nfds;</span><br><span class="line">  <span class="type">int</span> fd;</span><br><span class="line">  <span class="type">int</span> op;</span><br><span class="line">  <span class="type">int</span> i;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 如果没有任何观察者，直接返回</span></span><br><span class="line">  <span class="keyword">if</span> (loop-&gt;nfds == <span class="number">0</span>) &#123;</span><br><span class="line">    assert(QUEUE_EMPTY(&amp;loop-&gt;watcher_queue));</span><br><span class="line">    <span class="keyword">return</span>;</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="built_in">memset</span>(&amp;e, <span class="number">0</span>, <span class="keyword">sizeof</span>(e));</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 向 `epoll` 系统注册所有 I/O观察者</span></span><br><span class="line">  <span class="keyword">while</span> (!QUEUE_EMPTY(&amp;loop-&gt;watcher_queue)) &#123;</span><br><span class="line">    <span class="comment">// 获取队列头部，并将队列从 `loop-&gt;watcher_queue` 摘除</span></span><br><span class="line">    q = QUEUE_HEAD(&amp;loop-&gt;watcher_queue);</span><br><span class="line">    QUEUE_REMOVE(q);</span><br><span class="line">    QUEUE_INIT(q);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 获取 I/O观察者 结构</span></span><br><span class="line">    w = QUEUE_DATA(q, <span class="type">uv__io_t</span>, watcher_queue);</span><br><span class="line">    assert(w-&gt;pevents != <span class="number">0</span>);</span><br><span class="line">    assert(w-&gt;fd &gt;= <span class="number">0</span>);</span><br><span class="line">    assert(w-&gt;fd &lt; (<span class="type">int</span>) loop-&gt;nwatchers);</span><br><span class="line"></span><br><span class="line">    e.events = w-&gt;pevents;</span><br><span class="line">    e.data.fd = w-&gt;fd;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (w-&gt;events == <span class="number">0</span>)</span><br><span class="line">      op = EPOLL_CTL_ADD;</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">      op = EPOLL_CTL_MOD;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 向 epoll 注册文件描述符及需要监控的IO事件</span></span><br><span class="line">    <span class="comment">/* XXX Future optimization: do EPOLL_CTL_MOD lazily if we stop watching</span></span><br><span class="line"><span class="comment">     * events, skip the syscall and squelch the events after epoll_wait().</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">if</span> (epoll_ctl(loop-&gt;backend_fd, op, w-&gt;fd, &amp;e)) &#123;</span><br><span class="line">      <span class="keyword">if</span> (errno != EEXIST)</span><br><span class="line">        <span class="built_in">abort</span>();</span><br><span class="line"></span><br><span class="line">      assert(op == EPOLL_CTL_ADD);</span><br><span class="line"></span><br><span class="line">      <span class="comment">// loop-&gt;backend_fd 在事件循环初始化时也就是在 `uv_loop_init` 中 通过 `epoll_create` 创建</span></span><br><span class="line">      <span class="comment">/* We&#x27;ve reactivated a file descriptor that&#x27;s been watched before. */</span></span><br><span class="line">      <span class="keyword">if</span> (epoll_ctl(loop-&gt;backend_fd, EPOLL_CTL_MOD, w-&gt;fd, &amp;e))</span><br><span class="line">        <span class="built_in">abort</span>();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 挂起的 `pevents` 设置为 `events` 将在下次事件循环中生效</span></span><br><span class="line">    w-&gt;events = w-&gt;pevents;</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 如果配置了 `UV_LOOP_BLOCK_SIGPROF`，则需要阻塞该信号</span></span><br><span class="line">  psigset = <span class="literal">NULL</span>;</span><br><span class="line">  <span class="keyword">if</span> (loop-&gt;flags &amp; UV_LOOP_BLOCK_SIGPROF) &#123;</span><br><span class="line">    sigemptyset(&amp;sigset);</span><br><span class="line">    sigaddset(&amp;sigset, SIGPROF);</span><br><span class="line">    psigset = &amp;sigset;</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  assert(timeout &gt;= <span class="number">-1</span>);</span><br><span class="line">  base = loop-&gt;time;</span><br><span class="line">  <span class="comment">// `count` 减少到 `0` 下面的循环跳出</span></span><br><span class="line">  count = <span class="number">48</span>; <span class="comment">/* Benchmarks suggest this gives the best throughput. */</span></span><br><span class="line">  real_timeout = timeout;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 开始进入 `epoll_pwait` 轮询IO事件</span></span><br><span class="line">  <span class="comment">// 通常情况下，在 `timeout` 大于 `0` 的情况下，循环不断迭代到 `timeout` 减小到 `0` 时，循环跳出</span></span><br><span class="line">  <span class="comment">// 在没有设置定时器的情况下，如果不出现错误，循环将一直不会跳出</span></span><br><span class="line">  <span class="comment">// 以下循环主要由 `timeout` 和 `count` 控制是否跳出，符合整个事件循环</span></span><br><span class="line">  <span class="keyword">for</span> (;;) &#123;</span><br><span class="line">    <span class="comment">/* See the comment for max_safe_timeout for an explanation of why</span></span><br><span class="line"><span class="comment">     * this is necessary.  Executive summary: kernel bug workaround.</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">if</span> (<span class="keyword">sizeof</span>(<span class="type">int32_t</span>) == <span class="keyword">sizeof</span>(<span class="type">long</span>) &amp;&amp; timeout &gt;= max_safe_timeout)</span><br><span class="line">      timeout = max_safe_timeout;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// `epoll_pwait` 在 timeout 为 `0` 时立刻返回，为 `-1` 时会一直阻塞直到有事件发生，为 `正整数` 时则会最长阻塞 `timeout` 毫秒或有事件后返回。</span></span><br><span class="line">    <span class="comment">// `nfds` 表示产生IO事件的文件描述符的数量，为 `0` 则为没有事件发生，可能因为超时时间到了，或者 `timeout=0`</span></span><br><span class="line">    <span class="comment">// `events` 保存了从内核得到的事件集合，`nfds` 实际上相当于数组内有效数据的长度。</span></span><br><span class="line">    nfds = epoll_pwait(loop-&gt;backend_fd,</span><br><span class="line">                       events,</span><br><span class="line">                       ARRAY_SIZE(events),</span><br><span class="line">                       timeout,</span><br><span class="line">                       psigset);</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Update loop-&gt;time unconditionally. It&#x27;s tempting to skip the update when</span></span><br><span class="line"><span class="comment">     * timeout == 0 (i.e. non-blocking poll) but there is no guarantee that the</span></span><br><span class="line"><span class="comment">     * operating system didn&#x27;t reschedule our process while in the syscall.</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    SAVE_ERRNO(uv__update_time(loop));</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 没有事件发生</span></span><br><span class="line">    <span class="keyword">if</span> (nfds == <span class="number">0</span>) &#123;</span><br><span class="line">      <span class="comment">// `timeout` 一定不为 `-1`</span></span><br><span class="line">      assert(timeout != <span class="number">-1</span>);</span><br><span class="line"></span><br><span class="line">      <span class="comment">// 如果`timeout`为`0`函数直接返回</span></span><br><span class="line">      <span class="keyword">if</span> (timeout == <span class="number">0</span>)</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line"></span><br><span class="line">      <span class="comment">/* We may have been inside the system call for longer than |timeout|</span></span><br><span class="line"><span class="comment">       * milliseconds so we need to update the timestamp to avoid drift.</span></span><br><span class="line"><span class="comment">       */</span></span><br><span class="line">      <span class="comment">// 减少下次 `epoll_pwait` 的 `timeout` 时间</span></span><br><span class="line">      <span class="keyword">goto</span> update_timeout;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// `epoll_wait` 返回错误</span></span><br><span class="line">    <span class="keyword">if</span> (nfds == <span class="number">-1</span>) &#123;</span><br><span class="line">      <span class="keyword">if</span> (errno != EINTR)</span><br><span class="line">        <span class="built_in">abort</span>();</span><br><span class="line"></span><br><span class="line">      <span class="comment">// 如果`timeout`为`-1`则继续循环</span></span><br><span class="line">      <span class="keyword">if</span> (timeout == <span class="number">-1</span>)</span><br><span class="line">        <span class="keyword">continue</span>;</span><br><span class="line"></span><br><span class="line">      <span class="comment">// 如果`timeout`为`0`函数直接返回</span></span><br><span class="line">      <span class="keyword">if</span> (timeout == <span class="number">0</span>)</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line"></span><br><span class="line">      <span class="comment">/* Interrupted by a signal. Update timeout and poll again. */</span></span><br><span class="line">      <span class="comment">// 减少下次 `epoll_pwait` 的 `timeout` 时间</span></span><br><span class="line">      <span class="keyword">goto</span> update_timeout;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    have_signals = <span class="number">0</span>;</span><br><span class="line">    nevents = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    assert(loop-&gt;watchers != <span class="literal">NULL</span>);</span><br><span class="line">    <span class="comment">// `loop-&gt;watchers` 的实际长度 为 `loop-&gt;nwatchers + 2`，观察者只使用 `loop-&gt;watchers` 的 `0` ~ `loop-&gt;nwatchers - 1` 项</span></span><br><span class="line">    <span class="comment">// `loop-&gt;nwatchers` ~ `loop-&gt;nwatchers + 1` 被用来存储 `events` 和 `nfds`，`uv__platform_invalidate_fd` 中会使用</span></span><br><span class="line">    <span class="comment">// 后面以下两项又被赋值为`NULL`，`for`循环部分又没有代码能够使函数返回，所以看似以下两行并无实际作用</span></span><br><span class="line">    loop-&gt;watchers[loop-&gt;nwatchers] = (<span class="type">void</span>*) events;</span><br><span class="line">    loop-&gt;watchers[loop-&gt;nwatchers + <span class="number">1</span>] = (<span class="type">void</span>*) (<span class="type">uintptr_t</span>) nfds;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 处理IO事件：获取IO观察者，调用关联的回调函数</span></span><br><span class="line">    <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; nfds; i++) &#123;</span><br><span class="line">      pe = events + i;</span><br><span class="line">      fd = pe-&gt;data.fd;</span><br><span class="line"></span><br><span class="line">      <span class="comment">/* Skip invalidated events, see uv__platform_invalidate_fd */</span></span><br><span class="line">      <span class="keyword">if</span> (fd == <span class="number">-1</span>)</span><br><span class="line">        <span class="keyword">continue</span>;</span><br><span class="line"></span><br><span class="line">      assert(fd &gt;= <span class="number">0</span>);</span><br><span class="line">      assert((<span class="type">unsigned</span>) fd &lt; loop-&gt;nwatchers);</span><br><span class="line"></span><br><span class="line">      w = loop-&gt;watchers[fd];</span><br><span class="line"></span><br><span class="line">      <span class="comment">// 如果IO观察者已经被移除，则停止轮询这个文件描述符上的IO事件</span></span><br><span class="line">      <span class="comment">// 在一次事件循环中，同一IO观察者上可能出现多次IO事件</span></span><br><span class="line">      <span class="comment">// 继而调用多次回调函数，某次回调函数中，有可能移除了`w`自己</span></span><br><span class="line">      <span class="keyword">if</span> (w == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="comment">/* File descriptor that we&#x27;ve stopped watching, disarm it.</span></span><br><span class="line"><span class="comment">         *</span></span><br><span class="line"><span class="comment">         * Ignore all errors because we may be racing with another thread</span></span><br><span class="line"><span class="comment">         * when the file descriptor is closed.</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        epoll_ctl(loop-&gt;backend_fd, EPOLL_CTL_DEL, fd, pe);</span><br><span class="line">        <span class="keyword">continue</span>;</span><br><span class="line">      &#125;</span><br><span class="line"></span><br><span class="line">      <span class="comment">// 进入事件处理</span></span><br><span class="line"></span><br><span class="line">      <span class="comment">/* Give users only events they&#x27;re interested in. Prevents spurious</span></span><br><span class="line"><span class="comment">       * callbacks when previous callback invocation in this loop has stopped</span></span><br><span class="line"><span class="comment">       * the current watcher. Also, filters out events that users has not</span></span><br><span class="line"><span class="comment">       * requested us to watch.</span></span><br><span class="line"><span class="comment">       */</span></span><br><span class="line">      pe-&gt;events &amp;= w-&gt;pevents | POLLERR | POLLHUP;</span><br><span class="line"></span><br><span class="line">      <span class="comment">/* Work around an epoll quirk where it sometimes reports just the</span></span><br><span class="line"><span class="comment">       * EPOLLERR or EPOLLHUP event.  In order to force the event loop to</span></span><br><span class="line"><span class="comment">       * move forward, we merge in the read/write events that the watcher</span></span><br><span class="line"><span class="comment">       * is interested in; uv__read() and uv__write() will then deal with</span></span><br><span class="line"><span class="comment">       * the error or hangup in the usual fashion.</span></span><br><span class="line"><span class="comment">       *</span></span><br><span class="line"><span class="comment">       * Note to self: happens when epoll reports EPOLLIN|EPOLLHUP, the user</span></span><br><span class="line"><span class="comment">       * reads the available data, calls uv_read_stop(), then sometime later</span></span><br><span class="line"><span class="comment">       * calls uv_read_start() again.  By then, libuv has forgotten about the</span></span><br><span class="line"><span class="comment">       * hangup and the kernel won&#x27;t report EPOLLIN again because there&#x27;s</span></span><br><span class="line"><span class="comment">       * nothing left to read.  If anything, libuv is to blame here.  The</span></span><br><span class="line"><span class="comment">       * current hack is just a quick bandaid; to properly fix it, libuv</span></span><br><span class="line"><span class="comment">       * needs to remember the error/hangup event.  We should get that for</span></span><br><span class="line"><span class="comment">       * free when we switch over to edge-triggered I/O.</span></span><br><span class="line"><span class="comment">       */</span></span><br><span class="line">      <span class="keyword">if</span> (pe-&gt;events == POLLERR || pe-&gt;events == POLLHUP)</span><br><span class="line">        pe-&gt;events |=</span><br><span class="line">          w-&gt;pevents &amp; (POLLIN | POLLOUT | UV__POLLRDHUP | UV__POLLPRI);</span><br><span class="line"></span><br><span class="line">      <span class="comment">// 如果存在有效事件</span></span><br><span class="line">      <span class="keyword">if</span> (pe-&gt;events != <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="comment">/* Run signal watchers last.  This also affects child process watchers</span></span><br><span class="line"><span class="comment">         * because those are implemented in terms of signal watchers.</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        <span class="comment">// 如果 `w` 是 `loop-&gt;signal_IOWatcher` 在循环之外调用回调，避免重复触发回调</span></span><br><span class="line">        <span class="keyword">if</span> (w == &amp;loop-&gt;signal_IOWatcher)</span><br><span class="line">          have_signals = <span class="number">1</span>;</span><br><span class="line">        <span class="keyword">else</span></span><br><span class="line">          w-&gt;cb(loop, w, pe-&gt;events);</span><br><span class="line">        <span class="comment">// `w-&gt;cb` 是 `uv__io_cb` 类型的函数指针，对应的实现函数如`uv__async_io`已经在上文介绍</span></span><br><span class="line">        <span class="comment">// 这个回调函数指针由 libuv 内部实现的统一入口，在 `cb` 中再进行事件分发，交由特定逻辑处理</span></span><br><span class="line"></span><br><span class="line">        nevents++;</span><br><span class="line">      &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 如果信号事件触发</span></span><br><span class="line">    <span class="keyword">if</span> (have_signals != <span class="number">0</span>)</span><br><span class="line">      loop-&gt;signal_IOWatcher.cb(loop, &amp;loop-&gt;signal_IOWatcher, POLLIN);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 重新赋值为`NULL`</span></span><br><span class="line">    loop-&gt;watchers[loop-&gt;nwatchers] = <span class="literal">NULL</span>;</span><br><span class="line">    loop-&gt;watchers[loop-&gt;nwatchers + <span class="number">1</span>] = <span class="literal">NULL</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 如果信号事件触发</span></span><br><span class="line">    <span class="keyword">if</span> (have_signals != <span class="number">0</span>)</span><br><span class="line">      <span class="keyword">return</span>;  <span class="comment">/* Event loop should cycle now so don&#x27;t poll again. */</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// 如果 事件计数器 不为 `0`</span></span><br><span class="line">    <span class="keyword">if</span> (nevents != <span class="number">0</span>) &#123;</span><br><span class="line">      <span class="comment">// 如果 所有 所有文件描述符上都有事件产生 且 `count` 不为 `0`，再循环一次</span></span><br><span class="line">      <span class="keyword">if</span> (nfds == ARRAY_SIZE(events) &amp;&amp; --count != <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="comment">/* Poll for more events but don&#x27;t block this time. */</span></span><br><span class="line">        timeout = <span class="number">0</span>;</span><br><span class="line">        <span class="keyword">continue</span>;</span><br><span class="line">      &#125;</span><br><span class="line">      <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 如果`timeout`为`0`函数直接返回</span></span><br><span class="line">    <span class="keyword">if</span> (timeout == <span class="number">0</span>)</span><br><span class="line">      <span class="keyword">return</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 如果`timeout`为`-1`则继续循环</span></span><br><span class="line">    <span class="keyword">if</span> (timeout == <span class="number">-1</span>)</span><br><span class="line">      <span class="keyword">continue</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 重新计算 `timeout`</span></span><br><span class="line">update_timeout:</span><br><span class="line">    assert(timeout &gt; <span class="number">0</span>);</span><br><span class="line"></span><br><span class="line">    real_timeout -= (loop-&gt;time - base);</span><br><span class="line">    <span class="keyword">if</span> (real_timeout &lt;= <span class="number">0</span>)</span><br><span class="line">      <span class="keyword">return</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 剩余 `timeout`</span></span><br><span class="line">    timeout = real_timeout;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>在某些情况下，IO观察者绑定的回调函数并不是立即调用的，而是被延迟到下一次事件循环的固定阶段调用的，在 <code>uv_run</code> 中调用的 <code>uv__run_pending</code> 处理这些被延迟的IO观察者，实现如下：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/view-v1.28.0/src/unix/core.c#L737">https://github.com/libuv/libuv/blob/view-v1.28.0/src/unix/core.c#L737</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">uv__run_pending</span><span class="params">(<span class="type">uv_loop_t</span>* loop)</span> &#123;</span><br><span class="line">  QUEUE* q;</span><br><span class="line">  QUEUE pq;</span><br><span class="line">  <span class="type">uv__io_t</span>* w;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (QUEUE_EMPTY(&amp;loop-&gt;pending_queue))</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  QUEUE_MOVE(&amp;loop-&gt;pending_queue, &amp;pq);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">while</span> (!QUEUE_EMPTY(&amp;pq)) &#123;</span><br><span class="line">    q = QUEUE_HEAD(&amp;pq);</span><br><span class="line">    QUEUE_REMOVE(q);</span><br><span class="line">    QUEUE_INIT(q);</span><br><span class="line">    w = QUEUE_DATA(q, <span class="type">uv__io_t</span>, pending_queue);</span><br><span class="line">    w-&gt;cb(loop, w, POLLOUT);</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>该函数遍历 <code>loop-&gt;pending_queue</code> 队列节点，取得I&#x2F;O观察者后调用 <code>cb</code>，并且指定 <code>events</code> 参数为固定值 <code>POLLOUT</code>（表示可写），因此可以猜测被插入到 <code>loop-&gt;pending_queue</code> 队列中的情形都是可写I&#x2F;O事件。该队列上是用来保存被延迟到下次事件循环中处理的IO观察者。为什么需要延迟呢？</p>
+<p>通过搜索可以找到只有 <code>uv__io_feed</code> 中存在向 <code>loop-&gt;pending_queue</code> 队列插入节点的代码，如下：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L892">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L892</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">uv__io_feed</span><span class="params">(<span class="type">uv_loop_t</span>* loop, <span class="type">uv__io_t</span>* w)</span> &#123;</span><br><span class="line">  <span class="keyword">if</span> (QUEUE_EMPTY(&amp;w-&gt;pending_queue))</span><br><span class="line">    QUEUE_INSERT_TAIL(&amp;loop-&gt;pending_queue, &amp;w-&gt;pending_queue);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>继续搜索 <code>uv__io_feed</code> 可找到多处调用，此处就不过多介绍了。</p>
+<p>至此，整个I&#x2F;O观察者工作原理已经分析完成了。</p>
+<p>I&#x2F;O观察者是 libuv 中I&#x2F;O相关的基础抽象，实现了对I&#x2F;O事件的监控，其他I&#x2F;O相关的功能基于这个基础抽象，I&#x2F;O观察者完成了基本的事件派发，事件处理中的I&#x2F;O数据读写则由更高级的抽象 <code>handle</code> 和 <code>request</code> 完成。</p>
+<hr>
+<p><a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/tree/master/node.js/libuv/5-libuv-io-watcher.md" >查看源文件</a>&nbsp;&nbsp;<a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/edit/master/node.js/libuv/5-libuv-io-watcher.md">编辑源文件</a></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>liuyanjie
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://blog.butonly.com/posts/node.js/libuv/5-libuv-io-watcher/" title="libuv源码分析（五）IO观察者（io_watcher）">https://blog.butonly.com/posts/node.js/libuv/5-libuv-io-watcher/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/libuv/" rel="tag"># libuv</a>
+              <a href="/tags/node-js/" rel="tag"># node.js</a>
+              <a href="/tags/eventloop/" rel="tag"># eventloop</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/posts/node.js/libuv/4-libuv-timer/" rel="prev" title="libuv源码分析（四）定时器（Timer）">
+                  <i class="fa fa-angle-left"></i> libuv源码分析（四）定时器（Timer）
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/posts/node.js/libuv/6-libuv-stream/" rel="next" title="libuv源码分析（六）流（Stream）">
+                  libuv源码分析（六）流（Stream） <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    
+  <div class="comments" id="disqus_thread">
+    <noscript>Please enable JavaScript to view the comments powered by Disqus.</noscript>
+  </div>
+  
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2018 – 
+    <span itemprop="copyrightYear">2025</span>
+    <span class="with-love">
+      <i class="heartbeat"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">liuyanjie</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">166k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:31</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+  <a href="https://github.com/c-cc-cc" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+<script class="next-config" data-name="disqus" type="application/json">{"enable":true,"shortname":"liuyanjie","count":true,"lazyload":true,"i18n":{"disqus":"disqus"}}</script>
+<script src="/js/third-party/comments/disqus.js" defer></script>
+
+</body>
+</html>

@@ -1,0 +1,380 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>liuyanjie&#39;s blog</title>
+  
+  
+  <link href="https://blog.butonly.com/atom.xml" rel="self"/>
+  
+  <link href="https://blog.butonly.com/"/>
+  <updated>2025-12-21T01:50:44.749Z</updated>
+  <id>https://blog.butonly.com/</id>
+  
+  <author>
+    <name>liuyanjie</name>
+    
+  </author>
+  
+  <generator uri="https://hexo.io/">Hexo</generator>
+  
+  <entry>
+    <title>深入理解 Rust async/.await 实现原理</title>
+    <link href="https://blog.butonly.com/posts/langs/rust/rust-asyncawait/"/>
+    <id>https://blog.butonly.com/posts/langs/rust/rust-asyncawait/</id>
+    <published>2025-12-21T03:00:00.000Z</published>
+    <updated>2025-12-21T01:50:44.749Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="rust" scheme="https://blog.butonly.com/categories/rust/"/>
+    
+    
+    <category term="rust" scheme="https://blog.butonly.com/tags/rust/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>深入理解 Rust 生命周期</title>
+    <link href="https://blog.butonly.com/posts/langs/rust/rust-lifecycle/"/>
+    <id>https://blog.butonly.com/posts/langs/rust/rust-lifecycle/</id>
+    <published>2025-12-21T03:00:00.000Z</published>
+    <updated>2025-12-21T01:50:44.748Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="rust" scheme="https://blog.butonly.com/categories/rust/"/>
+    
+    
+    <category term="rust" scheme="https://blog.butonly.com/tags/rust/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>深入理解 Rust 闭包</title>
+    <link href="https://blog.butonly.com/posts/langs/rust/rust-closure/"/>
+    <id>https://blog.butonly.com/posts/langs/rust/rust-closure/</id>
+    <published>2025-12-21T03:00:00.000Z</published>
+    <updated>2025-12-21T01:50:44.749Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="rust" scheme="https://blog.butonly.com/categories/rust/"/>
+    
+    
+    <category term="rust" scheme="https://blog.butonly.com/tags/rust/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>Git命令工作机制</title>
+    <link href="https://blog.butonly.com/posts/vcs/git/git-working-mechanism/"/>
+    <id>https://blog.butonly.com/posts/vcs/git/git-working-mechanism/</id>
+    <published>2019-06-24T04:00:00.000Z</published>
+    <updated>2021-05-23T05:15:53.021Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="git" scheme="https://blog.butonly.com/categories/git/"/>
+    
+    
+    <category term="vcs" scheme="https://blog.butonly.com/tags/vcs/"/>
+    
+    <category term="git" scheme="https://blog.butonly.com/tags/git/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>Git对象模型：一步一步分析Git底层对象模型</title>
+    <link href="https://blog.butonly.com/posts/vcs/git/git-object-model/"/>
+    <id>https://blog.butonly.com/posts/vcs/git/git-object-model/</id>
+    <published>2019-06-24T03:00:00.000Z</published>
+    <updated>2025-11-22T04:38:35.138Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="git" scheme="https://blog.butonly.com/categories/git/"/>
+    
+    
+    <category term="vcs" scheme="https://blog.butonly.com/tags/vcs/"/>
+    
+    <category term="git" scheme="https://blog.butonly.com/tags/git/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>libuv源码分析（八）线程池（Threadpool）</title>
+    <link href="https://blog.butonly.com/posts/node.js/libuv/8-libuv-threadpool/"/>
+    <id>https://blog.butonly.com/posts/node.js/libuv/8-libuv-threadpool/</id>
+    <published>2019-04-23T07:00:08.000Z</published>
+    <updated>2021-05-08T08:18:19.519Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="源码分析" scheme="https://blog.butonly.com/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/"/>
+    
+    
+    <category term="libuv" scheme="https://blog.butonly.com/tags/libuv/"/>
+    
+    <category term="node.js" scheme="https://blog.butonly.com/tags/node-js/"/>
+    
+    <category term="eventloop" scheme="https://blog.butonly.com/tags/eventloop/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>libuv源码分析（七）异步唤醒（Async）</title>
+    <link href="https://blog.butonly.com/posts/node.js/libuv/7-libuv-async/"/>
+    <id>https://blog.butonly.com/posts/node.js/libuv/7-libuv-async/</id>
+    <published>2019-04-23T07:00:07.000Z</published>
+    <updated>2019-07-24T07:24:34.676Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="源码分析" scheme="https://blog.butonly.com/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/"/>
+    
+    
+    <category term="libuv" scheme="https://blog.butonly.com/tags/libuv/"/>
+    
+    <category term="node.js" scheme="https://blog.butonly.com/tags/node-js/"/>
+    
+    <category term="eventloop" scheme="https://blog.butonly.com/tags/eventloop/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>libuv源码分析（六）流（Stream）</title>
+    <link href="https://blog.butonly.com/posts/node.js/libuv/6-libuv-stream/"/>
+    <id>https://blog.butonly.com/posts/node.js/libuv/6-libuv-stream/</id>
+    <published>2019-04-23T07:00:06.000Z</published>
+    <updated>2019-07-24T07:24:34.675Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="源码分析" scheme="https://blog.butonly.com/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/"/>
+    
+    
+    <category term="libuv" scheme="https://blog.butonly.com/tags/libuv/"/>
+    
+    <category term="node.js" scheme="https://blog.butonly.com/tags/node-js/"/>
+    
+    <category term="eventloop" scheme="https://blog.butonly.com/tags/eventloop/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>libuv源码分析（五）IO观察者（io_watcher）</title>
+    <link href="https://blog.butonly.com/posts/node.js/libuv/5-libuv-io-watcher/"/>
+    <id>https://blog.butonly.com/posts/node.js/libuv/5-libuv-io-watcher/</id>
+    <published>2019-04-23T07:00:05.000Z</published>
+    <updated>2019-07-24T07:24:34.675Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="源码分析" scheme="https://blog.butonly.com/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/"/>
+    
+    
+    <category term="libuv" scheme="https://blog.butonly.com/tags/libuv/"/>
+    
+    <category term="node.js" scheme="https://blog.butonly.com/tags/node-js/"/>
+    
+    <category term="eventloop" scheme="https://blog.butonly.com/tags/eventloop/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>libuv源码分析（四）定时器（Timer）</title>
+    <link href="https://blog.butonly.com/posts/node.js/libuv/4-libuv-timer/"/>
+    <id>https://blog.butonly.com/posts/node.js/libuv/4-libuv-timer/</id>
+    <published>2019-04-23T07:00:04.000Z</published>
+    <updated>2019-07-24T07:24:34.674Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="源码分析" scheme="https://blog.butonly.com/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/"/>
+    
+    
+    <category term="libuv" scheme="https://blog.butonly.com/tags/libuv/"/>
+    
+    <category term="node.js" scheme="https://blog.butonly.com/tags/node-js/"/>
+    
+    <category term="eventloop" scheme="https://blog.butonly.com/tags/eventloop/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>libuv源码分析（三）资源抽象：Handle 和 Request</title>
+    <link href="https://blog.butonly.com/posts/node.js/libuv/3-libuv-handle-and-request/"/>
+    <id>https://blog.butonly.com/posts/node.js/libuv/3-libuv-handle-and-request/</id>
+    <published>2019-04-23T07:00:03.000Z</published>
+    <updated>2021-05-08T08:18:19.517Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="源码分析" scheme="https://blog.butonly.com/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/"/>
+    
+    
+    <category term="libuv" scheme="https://blog.butonly.com/tags/libuv/"/>
+    
+    <category term="node.js" scheme="https://blog.butonly.com/tags/node-js/"/>
+    
+    <category term="eventloop" scheme="https://blog.butonly.com/tags/eventloop/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>libuv源码分析（二）事件循环（Eventloop）</title>
+    <link href="https://blog.butonly.com/posts/node.js/libuv/2-libuv-event-loop/"/>
+    <id>https://blog.butonly.com/posts/node.js/libuv/2-libuv-event-loop/</id>
+    <published>2019-04-23T07:00:02.000Z</published>
+    <updated>2021-05-08T08:18:19.515Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="源码分析" scheme="https://blog.butonly.com/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/"/>
+    
+    
+    <category term="libuv" scheme="https://blog.butonly.com/tags/libuv/"/>
+    
+    <category term="node.js" scheme="https://blog.butonly.com/tags/node-js/"/>
+    
+    <category term="eventloop" scheme="https://blog.butonly.com/tags/eventloop/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>libuv源码分析（一）全局概览（Overview）</title>
+    <link href="https://blog.butonly.com/posts/node.js/libuv/1-libuv-overview/"/>
+    <id>https://blog.butonly.com/posts/node.js/libuv/1-libuv-overview/</id>
+    <published>2019-04-23T07:00:01.000Z</published>
+    <updated>2021-05-08T08:18:19.513Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html"></summary>
+        
+      
+    
+    
+    
+    <category term="源码分析" scheme="https://blog.butonly.com/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/"/>
+    
+    
+    <category term="libuv" scheme="https://blog.butonly.com/tags/libuv/"/>
+    
+    <category term="node.js" scheme="https://blog.butonly.com/tags/node-js/"/>
+    
+    <category term="eventloop" scheme="https://blog.butonly.com/tags/eventloop/"/>
+    
+  </entry>
+  
+</feed>

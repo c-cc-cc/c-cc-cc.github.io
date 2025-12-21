@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)"><meta name="generator" content="Hexo 8.1.1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png">
+  <link rel="mask-icon" href="/favicon.png" color="#222">
+  <link rel="manifest" href="/manifest.json">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.css" integrity="sha256-gkQVf8UKZgQ0HyuxL/VnacadJ+D2Kox2TCEBuNQg5+w=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"blog.butonly.com","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.26.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"tomorrow-night-bright"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":true,"pangu":true,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"algolia":{"appID":"FRAAR0AUP0","apiKey":"459ace1d7f5aabfa15b4f89baba340b3","indexName":"blog.butonly.com","hits":{"per_page":10}}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="闭包是一个很常见的语言特性，很多语言都有，也都很容易理解，Rust 闭包因为 所有权&amp;生命周期 的存在，导致存在 FnOnce、FnMut、Fn 三种 Trait，增加了一些理解上的复杂性，尤其是存在一些反直觉的情况，本文想探讨此问题。  Rust 闭包实际是一种 匿名结构体，一旦声明，编译器就会创建一个新的 结构体，这个 结构体 会包含所有捕获的 自由变量，这个 结构体 不可见因此无法">
+<meta property="og:type" content="article">
+<meta property="og:title" content="深入理解 Rust 闭包">
+<meta property="og:url" content="https://blog.butonly.com/posts/langs/rust/rust-closure/index.html">
+<meta property="og:site_name" content="liuyanjie&#39;s blog">
+<meta property="og:description" content="闭包是一个很常见的语言特性，很多语言都有，也都很容易理解，Rust 闭包因为 所有权&amp;生命周期 的存在，导致存在 FnOnce、FnMut、Fn 三种 Trait，增加了一些理解上的复杂性，尤其是存在一些反直觉的情况，本文想探讨此问题。  Rust 闭包实际是一种 匿名结构体，一旦声明，编译器就会创建一个新的 结构体，这个 结构体 会包含所有捕获的 自由变量，这个 结构体 不可见因此无法">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2025-12-21T03:00:00.000Z">
+<meta property="article:modified_time" content="2025-12-21T01:50:44.749Z">
+<meta property="article:author" content="liuyanjie">
+<meta property="article:tag" content="rust">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://blog.butonly.com/posts/langs/rust/rust-closure/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://blog.butonly.com/posts/langs/rust/rust-closure/","path":"posts/langs/rust/rust-closure/","title":"深入理解 Rust 闭包"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>深入理解 Rust 闭包 | liuyanjie's blog</title>
+  
+    <script async src="https://www.googletagmanager.com/gtag/js?id=014348069229275019795:-z92dm0sjiy"></script>
+  <script class="next-config" data-name="google_analytics" type="application/json">{"tracking_id":"014348069229275019795:-z92dm0sjiy","only_pageview":false,"measure_protocol_api_secret":null}</script>
+  <script src="/js/third-party/analytics/google-analytics.js" defer></script>
+
+  <script src="/js/third-party/analytics/baidu-analytics.js" defer></script>
+  <script async src="https://hm.baidu.com/hm.js?4cd57e104d0d9f5862dd91d0acdb9eee"></script>
+
+
+
+
+
+
+
+  
+  <script size="300" alpha="0.6" zIndex="-1" src="https://cdn.jsdelivr.net/npm/ribbon.js@1.0.2/dist/ribbon.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.umd.js" integrity="sha256-a+H7FYzJv6oU2hfsfDGM2Ohw/cR9v+hPfxHCLdmCrE8=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/lozad@1.16.0/dist/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/pangu@7.2.0/dist/browser/pangu.umd.js" integrity="sha256-JnmRRnJK7DC6RQJbAJb6AXOM9OmWzS6z8eYultk/48Y=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script><script src="/js/bookmark.js" defer></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/algoliasearch@5.36.0/dist/lite/builds/browser.umd.js" integrity="sha256-o49zoHLDPBm9WLg6AiliAVi3axCRTqe3ltTxLvhzAVg=" crossorigin="anonymous" defer></script><script src="/js/third-party/search/algolia-search.js" defer></script>
+
+  <script class="next-config" data-name="pdf" type="application/json">{"object_url":{"url":"https://cdn.jsdelivr.net/npm/pdfobject@2.3.1/pdfobject.min.js","integrity":"sha256-jI72I8ZLVflVOisZIOaLvRew3tyvzeu6aZXFm7P7dEo="},"url":"/lib/pdf/web/viewer.html"}</script>
+  <script src="/js/third-party/tags/pdf.js" defer></script>
+
+  <script class="next-config" data-name="mermaid" type="application/json">{"enable":true,"theme":"forest","js":{"url":"https://cdn.jsdelivr.net/npm/mermaid@11.10.1/dist/mermaid.min.js","integrity":"sha256-BmQmdWDS8X2OTbrwELWK366LV6escyWhHHe0XCTU/Hk="}}</script>
+  <script src="/js/third-party/tags/mermaid.js" defer></script>
+
+
+  <script src="/js/third-party/fancybox.js" defer></script>
+
+
+
+  
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+<link rel="alternate" href="/atom.xml" title="liuyanjie's blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">liuyanjie's blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <img class="custom-logo-image" src="/logo.png" alt="liuyanjie's blog">
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="home fa-fw"></i>首页</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">6</span></a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+      <div class="search-header">
+        <span class="search-icon">
+          <i class="fa fa-search"></i>
+        </span>
+        <div class="search-input-container">
+          <input autocomplete="off" autocapitalize="off" maxlength="80"
+                placeholder="搜索..." spellcheck="false"
+                type="search" class="search-input">
+        </div>
+        <span class="popup-btn-close" role="button">
+          <i class="fa fa-times-circle"></i>
+        </span>
+      </div>
+      <div class="search-result-container">
+        <div class="search-result-icon">
+          <i class="fab fa-algolia fa-5x"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%AC%E8%B4%A8%EF%BC%9A%E7%BA%A6%E6%9D%9F%E4%B8%8E%E5%8C%85%E5%90%AB"><span class="nav-number">1.</span> <span class="nav-text">本质：约束与包含</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="liuyanjie"
+      src="/avatar.png">
+  <p class="site-author-name" itemprop="name">liuyanjie</p>
+  <div class="site-description" itemprop="description">KISS DRY</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">13</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/liuyanjie" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;liuyanjie" rel="noopener me" target="_blank"><i class="github fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="/liuyj619@gmail.com" title="E-Mail → liuyj619@gmail.com" rel="noopener me"><i class="envelope fa-fw"></i></a>
+      </span>
+  </div>
+  <div class="cc-license animated" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="https://cdn.jsdelivr.net/npm/@creativecommons/vocabulary@2020.11.3/assets/license_badges/small/by_nc_sa.svg" alt="Creative Commons"></a>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://blog.butonly.com/posts/langs/rust/rust-closure/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/avatar.png">
+      <meta itemprop="name" content="liuyanjie">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liuyanjie's blog">
+      <meta itemprop="description" content="KISS DRY">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="深入理解 Rust 闭包 | liuyanjie's blog">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          深入理解 Rust 闭包
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+      
+
+      <time title="创建时间：2025-12-21 11:00:00 / 修改时间：09:50:44" itemprop="dateCreated datePublished" datetime="2025-12-21T11:00:00+08:00">2025-12-21</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/rust/" itemprop="url" rel="index"><span itemprop="name">rust</span></a>
+        </span>
+    </span>
+
+  
+  
+  <span class="post-meta-item">
+    
+      <span class="post-meta-item-icon">
+        <i class="far fa-comment"></i>
+      </span>
+      <span class="post-meta-item-text">Disqus：</span>
+    
+    <a title="disqus" href="/posts/langs/rust/rust-closure/#disqus_thread" itemprop="discussionUrl">
+      <span class="post-comments-count disqus-comment-count" data-disqus-identifier="posts/langs/rust/rust-closure/" itemprop="commentCount"></span>
+    </a>
+  </span>
+  
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>4.3k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>4 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><blockquote>
+<p>闭包是一个很常见的语言特性，很多语言都有，也都很容易理解，Rust 闭包因为 所有权&amp;生命周期 的存在，导致存在 <code>FnOnce</code>、<code>FnMut</code>、<code>Fn</code> 三种 <code>Trait</code>，增加了一些理解上的复杂性，尤其是存在一些反直觉的情况，本文想探讨此问题。</p>
+</blockquote>
+<p>Rust 闭包实际是一种 <code>匿名结构体</code>，一旦声明，编译器就会创建一个新的 <code>结构体</code>，这个 <code>结构体</code> 会包含所有捕获的 <code>自由变量</code>，这个 <code>结构体</code> 不可见因此无法被其它地方使用。</p>
+<p>Rust 闭包因为受到 <code>所有权</code> 和 <code>借用</code> 规则的限制，闭包在捕获 <code>自由变量</code> 时，会根据闭包体的操作为 <code>闭包结构体</code> 实现不同的 <code>Trait</code>：<code>FnOnce</code> <code>FnMut</code> <code>Fn</code>，理解为什么会需要这三种 <code>Trait</code> 及其关联关系 是理解并掌握 Rust 闭包的关键一环。如果没有理解其本质，实际使用时会是比较迷惑的。三个 <code>Trait</code> 的区别如下：</p>
+<ol>
+<li><code>FnOnce</code>：闭包调用时会消耗 <code>self</code>（获取所有权），只能调用一次。典型场景：闭包将捕获的变量移动（move）到其他地方。</li>
+<li><code>FnMut</code>：闭包调用时需要 <code>&amp;mut self</code>，可以修改捕获的变量，可以被调用多次。</li>
+<li><code>Fn</code>：闭包调用时只需要 <code>&amp;self</code>，不修改捕获的变量，可以被调用多次。</li>
+</ol>
+<p>需要注意的是，这三个 <code>Trait</code> 描述的是<strong>闭包被调用时的行为</strong>，而不是<strong>闭包捕获变量的方式</strong>。闭包如何捕获变量（按值、按不可变引用、按可变引用）由编译器根据闭包体的使用情况自动推断，而实现哪个 <code>Trait</code> 则取决于闭包体对捕获变量的操作。</p>
+<p>接下来，尝试从 <code>Trait</code> 实现及底层权限模型角度，分析其本质。</p>
+<p>以下为三个 <code>Trait</code> 的定义及一段简单的示例代码：</p>
+<figure class="highlight rs"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">pub</span> <span class="keyword">trait</span> <span class="title class_">FnOnce</span>&lt;Args&gt;</span><br><span class="line"><span class="keyword">where</span></span><br><span class="line">    Args: Tuple,</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">type</span> <span class="title class_">Output</span>;</span><br><span class="line">    <span class="comment">// Required method</span></span><br><span class="line">    <span class="keyword">extern</span> <span class="string">&quot;rust-call&quot;</span> <span class="keyword">fn</span> <span class="title function_">call_once</span>(<span class="keyword">self</span>, args: Args) <span class="punctuation">-&gt;</span> <span class="keyword">Self</span>::Output;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">trait</span> <span class="title class_">FnMut</span>&lt;Args&gt;: <span class="built_in">FnOnce</span>&lt;Args&gt;</span><br><span class="line"><span class="keyword">where</span></span><br><span class="line">    Args: Tuple,</span><br><span class="line">&#123;</span><br><span class="line">    <span class="comment">// Required method</span></span><br><span class="line">    <span class="keyword">extern</span> <span class="string">&quot;rust-call&quot;</span> <span class="keyword">fn</span> <span class="title function_">call_mut</span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>, args: Args) <span class="punctuation">-&gt;</span> <span class="keyword">Self</span>::Output;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">trait</span> <span class="title class_">Fn</span>&lt;Args&gt;: <span class="built_in">FnMut</span>&lt;Args&gt;</span><br><span class="line"><span class="keyword">where</span></span><br><span class="line">    Args: Tuple,</span><br><span class="line">&#123;</span><br><span class="line">    <span class="comment">// Required method</span></span><br><span class="line">    <span class="keyword">extern</span> <span class="string">&quot;rust-call&quot;</span> <span class="keyword">fn</span> <span class="title function_">call</span>(&amp;<span class="keyword">self</span>, args: Args) <span class="punctuation">-&gt;</span> <span class="keyword">Self</span>::Output;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Ref：</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://doc.rust-lang.org/std/ops/trait.FnOnce.html">https://doc.rust-lang.org/std/ops/trait.FnOnce.html</a></li>
+<li><a target="_blank" rel="noopener" href="https://doc.rust-lang.org/std/ops/trait.FnMut.html">https://doc.rust-lang.org/std/ops/trait.FnMut.html</a></li>
+<li><a target="_blank" rel="noopener" href="https://doc.rust-lang.org/std/ops/trait.Fn.html">https://doc.rust-lang.org/std/ops/trait.Fn.html</a></li>
+</ul>
+<p>再看一段示例代码：</p>
+<figure class="highlight rs"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">fn</span> <span class="title function_">call_fnonce</span>&lt;F: <span class="title function_ invoke__">FnOnce</span>()&gt;(f: F) &#123;</span><br><span class="line">    <span class="title function_ invoke__">f</span>();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">fn</span> <span class="title function_">call_fnmut</span>&lt;F: <span class="title function_ invoke__">FnMut</span>()&gt;(<span class="keyword">mut</span> f: F) &#123;</span><br><span class="line">    <span class="title function_ invoke__">f</span>();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">fn</span> <span class="title function_">call_fn</span>&lt;F: <span class="title function_ invoke__">Fn</span>()&gt;(f: F) &#123;</span><br><span class="line">    <span class="title function_ invoke__">f</span>();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">fn</span> <span class="title function_">main</span>() &#123;</span><br><span class="line">    <span class="keyword">let</span> <span class="variable">x</span> = <span class="number">10</span>;</span><br><span class="line">    <span class="keyword">let</span> <span class="variable">sss</span> = <span class="type">String</span>::<span class="title function_ invoke__">from</span>(<span class="string">&quot;hello world&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">let</span> <span class="variable">fn_closure</span> = || <span class="built_in">println!</span>(<span class="string">&quot;Fn: &#123;&#125;, &#123;&#125;&quot;</span>, x, sss); <span class="comment">// Fn 闭包</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// 自动转换：Fn → FnMut → FnOnce</span></span><br><span class="line">    <span class="title function_ invoke__">call_fn</span>(fn_closure);        <span class="comment">// ✅ Fn 作为 Fn</span></span><br><span class="line">    <span class="title function_ invoke__">call_fnmut</span>(fn_closure);     <span class="comment">// ✅ Fn 作为 FnMut</span></span><br><span class="line">    <span class="title function_ invoke__">call_fnonce</span>(fn_closure);    <span class="comment">// ✅ Fn 作为 FnOnce</span></span><br><span class="line"></span><br><span class="line">    <span class="title function_ invoke__">fn_closure</span>(); <span class="comment">//  ✅ Fn 可以再次被调用</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// FnMut 闭包</span></span><br><span class="line">    <span class="keyword">let</span> <span class="keyword">mut </span><span class="variable">y</span> = <span class="number">5</span>;</span><br><span class="line">    <span class="keyword">let</span> <span class="keyword">mut </span><span class="variable">fnmut_closure</span> = || &#123;</span><br><span class="line">        y += <span class="number">1</span>;</span><br><span class="line">        <span class="built_in">println!</span>(<span class="string">&quot;FnMut: &#123;&#125;&quot;</span>, y);</span><br><span class="line">    &#125;;</span><br><span class="line"></span><br><span class="line">    <span class="title function_ invoke__">call_fnmut</span>(&amp;<span class="keyword">mut</span> fnmut_closure);  <span class="comment">// ✅ FnMut 作为 FnMut</span></span><br><span class="line">    <span class="title function_ invoke__">call_fnonce</span>(&amp;<span class="keyword">mut</span> fnmut_closure); <span class="comment">// ✅ FnMut 作为 FnOnce</span></span><br><span class="line">    </span><br><span class="line">    <span class="title function_ invoke__">fnmut_closure</span>(); <span class="comment">// ✅ 因为使用了引用传递，闭包本身未被移动，仍可调用</span></span><br><span class="line">    </span><br><span class="line">    <span class="comment">// call_fn(&amp;mut fnmut_closure);  // ❌ FnMut 不能作为 Fn</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>从以上 <code>Trait</code> 定义上来看，<code>Fn</code> 依赖 <code>FnMut</code>，而 <code>FnMut</code> 又依赖 <code>FnOnce</code>，如果一个闭包被编译器归类为 <code>Fn</code>，那么编译器也会同时为它实现 <code>FnMut</code> 和 <code>FnOnce</code>。</p>
+<p>这个依赖关系意味着 Rust 编译器 会为 <code>fn_closure</code> 闭包同时实现 <code>Fn</code>、<code>FnMut</code>、<code>FnOnce</code> 三个 <code>Trait</code>，也就是 <code>fn_closure</code> 对应的结构体实现了 <code>call</code> <code>call_mut</code> 和 <code>call_once</code> 三个关联函数。</p>
+<p>这里会令人感到困惑，因为 <code>fn_closure</code> 的实现代码以只读的方式捕获了变量 <code>x</code> 并没有以可变引用或转移所有权方式捕获变量，为什么要为其实现 <code>FnMut</code> 和 <code>FnOnce</code>，只实现 <code>Fn</code> 不就够了吗？</p>
+<p>这里困惑的来源两点：</p>
+<ol>
+<li><code>fn_closure</code> 闭包实现代码 与 编译器为其生成的 <code>Trait</code> 是不对应的，额外实现了另外两个 <code>Trait</code>。</li>
+<li><code>fn_closure</code> 闭包可以传递给要求 <code>FnMut</code> 和 <code>FnOnce</code> 参数的函数，为什么一个捕获只读引用的闭包 <code>Fn</code> 要允许被当做捕获可变引用的闭包 <code>FnMut</code> 使用？或者需要转移所有权的闭包 <code>FnOnce</code> 使用？只读 为什么可以传给 可变的？可变的 为什么可以传给 可移动？</li>
+</ol>
+<p>要想理解这个问题，可以从编译器如何实现 <code>Fn</code>、<code>FnMut</code>、<code>FnOnce</code> 这三个 Trait 的调用方法入手。</p>
+<p>对于以下包含闭包的代码：</p>
+<figure class="highlight rs"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> <span class="variable">x</span> = <span class="number">10</span>;</span><br><span class="line"><span class="keyword">let</span> <span class="variable">fn_closure</span> = || <span class="built_in">println!</span>(<span class="string">&quot;Fn: &#123;&#125;&quot;</span>, x);</span><br></pre></td></tr></table></figure>
+
+<p>编译器会为 <code>fn_closure</code> 生出成类似如下的闭包结构体和 <code>Trait</code> 实现：</p>
+<figure class="highlight rs"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 编译器生成的闭包结构</span></span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">Closure</span> &#123;</span><br><span class="line">    x: <span class="type">i32</span>,  <span class="comment">// 捕获 x 的副本（i32 实现了 Copy）</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">impl</span> <span class="title class_">Fn</span>&lt;()&gt; <span class="keyword">for</span> <span class="title class_">Closure</span> &#123;</span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">call</span>(&amp;<span class="keyword">self</span>, _args: ()) &#123;</span><br><span class="line">        <span class="built_in">println!</span>(<span class="string">&quot;Fn: &#123;&#125;&quot;</span>, <span class="keyword">self</span>.x);  <span class="comment">// 只读访问</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">impl</span> <span class="title class_">FnMut</span>&lt;()&gt; <span class="keyword">for</span> <span class="title class_">Closure</span> &#123;</span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">call_mut</span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>, args: ()) &#123;</span><br><span class="line">        <span class="keyword">self</span>.<span class="title function_ invoke__">call</span>(args) <span class="comment">// 只是转发到 Fn::call</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">impl</span> <span class="title class_">FnOnce</span>&lt;()&gt; <span class="keyword">for</span> <span class="title class_">Closure</span> &#123;</span><br><span class="line">    <span class="keyword">type</span> <span class="title class_">Output</span> = ();</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">call_once</span>(<span class="keyword">self</span>, args: ()) <span class="punctuation">-&gt;</span> () &#123;</span><br><span class="line">        <span class="keyword">self</span>.<span class="title function_ invoke__">call</span>(args) <span class="comment">// 只是转发到 Fn::call</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Ref: <a target="_blank" rel="noopener" href="https://doc.rust-lang.org/src/core/ops/function.rs.html#253">https://doc.rust-lang.org/src/core/ops/function.rs.html#253</a></p>
+<p>从以上实现中，可以看到 <code>call_mut</code> 和 <code>call_once</code> 方法只是简单地转发调用到 <code>call</code> 方法上，最终 <code>call</code> 方法只读访问了捕获的变量 <code>x</code>。从 Rust 的所有权和借用规则来看，这样的设计实现是满足相关约束的。</p>
+<ul>
+<li><code>call(&amp;self)</code>：通过不可变引用调用，完全安全</li>
+<li><code>call_mut(&amp;mut self)</code>：即使有可变引用，闭包也不会修改任何东西，所以安全</li>
+<li><code>call_once(self)</code>：即使获取所有权，闭包也不会被”消耗”，可以安全调用</li>
+</ul>
+<p>从调用方法的转发实现可以看到：<code>call_mut</code> 和 <code>call_once</code> 都转发到 <code>call</code>，转发方向是 <strong><code>FnMut</code> → <code>Fn</code></strong> 和 <strong><code>FnOnce</code> → <code>Fn</code></strong>。</p>
+<p>这里与通常理解的方向是相反的，根据定义，<code>Fn</code> 包含的能力是最全的，这里很容易用 “类型转换” 的方式理解：<code>Fn</code> 可以 “类型转换” 成 <code>FnMut</code> 或 <code>Fn</code>。<br>实际上，这种理解是<strong>错误</strong>的，这里并不存在 “类型转换”，并且这样 “类型转换” 方式理解的方向是相反的，这也是为什么这里容易产生困惑的原因。</p>
+<h2 id="本质：约束与包含"><a href="#本质：约束与包含" class="headerlink" title="本质：约束与包含"></a>本质：约束与包含</h2><p>为了彻底消除这种反直觉的困惑，我们需要调整观察的视角：不要把 <code>Fn</code>、<code>FnMut</code>、<code>FnOnce</code> 理解为闭包拥有的 “能力强度”，而应该理解为对调用者施加的 <strong>“约束强度”</strong>。</p>
+<ul>
+<li><strong>Fn</strong>：约束最<strong>严格</strong>。调用者必须保证 “不仅能调用，而且调用后闭包必须保持原样，状态不能变，所有权不能丢”。</li>
+<li><strong>FnOnce</strong>：约束最<strong>宽松</strong>。调用者唯一需要保证的是 “可以调用它”，至于调用后闭包还在不在，调用者不关心。</li>
+</ul>
+<p>这是一种<strong>包含关系</strong>，而不是等级关系：</p>
+<ul>
+<li>所有满足 <code>Fn</code> 约束（不可变借用调用）的闭包，<strong>天然满足</strong> <code>FnMut</code> 约束（因为不可变借用是一种特殊的可变借用，即 “不修改的可变借用”）。</li>
+<li>所有满足 <code>FnMut</code> 约束（可变借用调用）的闭包，<strong>天然满足</strong> <code>FnOnce</code> 约束（因为借用是所有权转移的一种特殊情况，即 “借用后归还”）。</li>
+</ul>
+<p>因此：<strong><code>Fn</code> ⊂ <code>FnMut</code> ⊂ <code>FnOnce</code></strong></p>
+<p>这就解释了为什么编译器会自动为 <code>Fn</code> 实现 <code>FnMut</code> 和 <code>FnOnce</code>：这不是 “类型转换”，而是 <strong>“子集归属”</strong>。</p>
+<p>就像现实生活中的例子：</p>
+<ul>
+<li><strong>Fn (能跑马拉松)</strong>：要求身体素质极高。</li>
+<li><strong>FnMut (能散步)</strong>：要求身体素质一般。</li>
+<li><strong>FnOnce (能活着)</strong>：要求最低。</li>
+</ul>
+<p>一个能跑马拉松的人（<code>Fn</code>），虽然他拥有最高的能力，但他完全可以去散步（当做 <code>FnMut</code> 用），也完全可以只是活着（当做 <code>FnOnce</code> 用）。你不需要对他进行“改造”或“转换”，因为他<strong>本来就是</strong>一个能散步、能活着的人。</p>
+<hr>
+<p><a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/tree/master/langs/rust/rust-closure.md" >查看源文件</a>&nbsp;&nbsp;<a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/edit/master/langs/rust/rust-closure.md">编辑源文件</a></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>liuyanjie
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://blog.butonly.com/posts/langs/rust/rust-closure/" title="深入理解 Rust 闭包">https://blog.butonly.com/posts/langs/rust/rust-closure/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/rust/" rel="tag"># rust</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/posts/vcs/git/git-working-mechanism/" rel="prev" title="Git命令工作机制">
+                  <i class="fa fa-angle-left"></i> Git命令工作机制
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/posts/langs/rust/rust-lifecycle/" rel="next" title="深入理解 Rust 生命周期">
+                  深入理解 Rust 生命周期 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    
+  <div class="comments" id="disqus_thread">
+    <noscript>Please enable JavaScript to view the comments powered by Disqus.</noscript>
+  </div>
+  
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2018 – 
+    <span itemprop="copyrightYear">2025</span>
+    <span class="with-love">
+      <i class="heartbeat"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">liuyanjie</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">166k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:31</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+  <a href="https://github.com/c-cc-cc" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+<script class="next-config" data-name="disqus" type="application/json">{"enable":true,"shortname":"liuyanjie","count":true,"lazyload":true,"i18n":{"disqus":"disqus"}}</script>
+<script src="/js/third-party/comments/disqus.js" defer></script>
+
+</body>
+</html>

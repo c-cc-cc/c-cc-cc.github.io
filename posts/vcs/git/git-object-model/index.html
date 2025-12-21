@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)"><meta name="generator" content="Hexo 8.1.1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png">
+  <link rel="mask-icon" href="/favicon.png" color="#222">
+  <link rel="manifest" href="/manifest.json">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.css" integrity="sha256-gkQVf8UKZgQ0HyuxL/VnacadJ+D2Kox2TCEBuNQg5+w=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"blog.butonly.com","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.26.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"tomorrow-night-bright"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":true,"pangu":true,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"algolia":{"appID":"FRAAR0AUP0","apiKey":"459ace1d7f5aabfa15b4f89baba340b3","indexName":"blog.butonly.com","hits":{"per_page":10}}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Git是一个非常强大的版本管理工具，有非常多的概念和命令，也有非常多且复杂的用法。但是其底层模型相对而言却非常简单，了解底层对象模型将非常有助于理解上层命令到底对仓库做了什么。如果想要精通Git，了解底层对象模型也是必不可少的。本文将会通过基本的命令操作，分析每一步操作对仓库数据做了哪些改动，进而分析出Git底层对象模型。 Git基本概念SHA所有用来表示项目历史信息的文件，都是通过一个40个字符">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Git对象模型：一步一步分析Git底层对象模型">
+<meta property="og:url" content="https://blog.butonly.com/posts/vcs/git/git-object-model/index.html">
+<meta property="og:site_name" content="liuyanjie&#39;s blog">
+<meta property="og:description" content="Git是一个非常强大的版本管理工具，有非常多的概念和命令，也有非常多且复杂的用法。但是其底层模型相对而言却非常简单，了解底层对象模型将非常有助于理解上层命令到底对仓库做了什么。如果想要精通Git，了解底层对象模型也是必不可少的。本文将会通过基本的命令操作，分析每一步操作对仓库数据做了哪些改动，进而分析出Git底层对象模型。 Git基本概念SHA所有用来表示项目历史信息的文件，都是通过一个40个字符">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://blog.butonly.com/images/vcs/git/images/object-blob.png">
+<meta property="og:image" content="https://blog.butonly.com/images/vcs/git/images/object-tree.png">
+<meta property="og:image" content="https://blog.butonly.com/images/vcs/git/images/object-commit.png">
+<meta property="og:image" content="https://blog.butonly.com/images/vcs/git/images/object-tag.png">
+<meta property="og:image" content="https://blog.butonly.com/images/vcs/git/images/object-c-t-b.png">
+<meta property="og:image" content="https://blog.butonly.com/images/vcs/git/images/git-obj-model.png">
+<meta property="article:published_time" content="2019-06-24T03:00:00.000Z">
+<meta property="article:modified_time" content="2025-11-22T04:38:35.138Z">
+<meta property="article:author" content="liuyanjie">
+<meta property="article:tag" content="git">
+<meta property="article:tag" content="vcs">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://blog.butonly.com/images/vcs/git/images/object-blob.png">
+
+
+<link rel="canonical" href="https://blog.butonly.com/posts/vcs/git/git-object-model/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://blog.butonly.com/posts/vcs/git/git-object-model/","path":"posts/vcs/git/git-object-model/","title":"Git对象模型：一步一步分析Git底层对象模型"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Git对象模型：一步一步分析Git底层对象模型 | liuyanjie's blog</title>
+  
+    <script async src="https://www.googletagmanager.com/gtag/js?id=014348069229275019795:-z92dm0sjiy"></script>
+  <script class="next-config" data-name="google_analytics" type="application/json">{"tracking_id":"014348069229275019795:-z92dm0sjiy","only_pageview":false,"measure_protocol_api_secret":null}</script>
+  <script src="/js/third-party/analytics/google-analytics.js" defer></script>
+
+  <script src="/js/third-party/analytics/baidu-analytics.js" defer></script>
+  <script async src="https://hm.baidu.com/hm.js?4cd57e104d0d9f5862dd91d0acdb9eee"></script>
+
+
+
+
+
+
+
+  
+  <script size="300" alpha="0.6" zIndex="-1" src="https://cdn.jsdelivr.net/npm/ribbon.js@1.0.2/dist/ribbon.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.umd.js" integrity="sha256-a+H7FYzJv6oU2hfsfDGM2Ohw/cR9v+hPfxHCLdmCrE8=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/lozad@1.16.0/dist/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/pangu@7.2.0/dist/browser/pangu.umd.js" integrity="sha256-JnmRRnJK7DC6RQJbAJb6AXOM9OmWzS6z8eYultk/48Y=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script><script src="/js/bookmark.js" defer></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/algoliasearch@5.36.0/dist/lite/builds/browser.umd.js" integrity="sha256-o49zoHLDPBm9WLg6AiliAVi3axCRTqe3ltTxLvhzAVg=" crossorigin="anonymous" defer></script><script src="/js/third-party/search/algolia-search.js" defer></script>
+
+  <script class="next-config" data-name="pdf" type="application/json">{"object_url":{"url":"https://cdn.jsdelivr.net/npm/pdfobject@2.3.1/pdfobject.min.js","integrity":"sha256-jI72I8ZLVflVOisZIOaLvRew3tyvzeu6aZXFm7P7dEo="},"url":"/lib/pdf/web/viewer.html"}</script>
+  <script src="/js/third-party/tags/pdf.js" defer></script>
+
+  <script class="next-config" data-name="mermaid" type="application/json">{"enable":true,"theme":"forest","js":{"url":"https://cdn.jsdelivr.net/npm/mermaid@11.10.1/dist/mermaid.min.js","integrity":"sha256-BmQmdWDS8X2OTbrwELWK366LV6escyWhHHe0XCTU/Hk="}}</script>
+  <script src="/js/third-party/tags/mermaid.js" defer></script>
+
+
+  <script src="/js/third-party/fancybox.js" defer></script>
+
+
+
+  
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+<link rel="alternate" href="/atom.xml" title="liuyanjie's blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">liuyanjie's blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <img class="custom-logo-image" src="/logo.png" alt="liuyanjie's blog">
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="home fa-fw"></i>首页</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">6</span></a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+      <div class="search-header">
+        <span class="search-icon">
+          <i class="fa fa-search"></i>
+        </span>
+        <div class="search-input-container">
+          <input autocomplete="off" autocapitalize="off" maxlength="80"
+                placeholder="搜索..." spellcheck="false"
+                type="search" class="search-input">
+        </div>
+        <span class="popup-btn-close" role="button">
+          <i class="fa fa-times-circle"></i>
+        </span>
+      </div>
+      <div class="search-result-container">
+        <div class="search-result-icon">
+          <i class="fab fa-algolia fa-5x"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Git%E5%9F%BA%E6%9C%AC%E6%A6%82%E5%BF%B5"><span class="nav-number">1.</span> <span class="nav-text">Git基本概念</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#SHA"><span class="nav-number">1.1.</span> <span class="nav-text">SHA</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AF%B9%E8%B1%A1"><span class="nav-number">1.2.</span> <span class="nav-text">对象</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#blob-%E6%96%87%E4%BB%B6-%E5%AF%B9%E8%B1%A1"><span class="nav-number">1.2.1.</span> <span class="nav-text">blob (文件) 对象</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#tree-%E7%9B%AE%E5%BD%95-%E5%AF%B9%E8%B1%A1"><span class="nav-number">1.2.2.</span> <span class="nav-text">tree (目录) 对象</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#commit-%E6%8F%90%E4%BA%A4-%E5%AF%B9%E8%B1%A1"><span class="nav-number">1.2.3.</span> <span class="nav-text">commit (提交) 对象</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#tag-%E6%A0%87%E7%AD%BE-%E5%AF%B9%E8%B1%A1"><span class="nav-number">1.2.4.</span> <span class="nav-text">tag (标签) 对象</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#commit-tree-blob"><span class="nav-number">1.2.5.</span> <span class="nav-text">commit -&gt; tree -&gt; blob</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8E%E5%85%B6%E4%BB%96%E7%89%88%E6%9C%AC%E6%8E%A7%E5%88%B6%E7%B3%BB%E7%BB%9F%E7%9A%84%E5%8C%BA%E5%88%AB"><span class="nav-number">1.3.</span> <span class="nav-text">与其他版本控制系统的区别</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E6%AD%A5%E4%B8%80%E6%AD%A5%E4%BA%86%E8%A7%A3Git%E5%9C%A8%E5%81%9A%E4%BB%80%E4%B9%88"><span class="nav-number">2.</span> <span class="nav-text">一步一步了解Git在做什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9D%E5%A7%8B%E5%8C%96%E4%BB%93%E5%BA%93"><span class="nav-number">2.1.</span> <span class="nav-text">初始化仓库</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A2%9E%E5%8A%A0%E4%B8%80%E4%B8%AA%E6%96%87%E4%BB%B6README-md"><span class="nav-number">2.2.</span> <span class="nav-text">增加一个文件README.md</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%A7%E7%BB%AD%E6%B7%BB%E5%8A%A0%E6%96%87%E4%BB%B6"><span class="nav-number">2.3.</span> <span class="nav-text">继续添加文件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%86%8D%E6%B7%BB%E5%8A%A0%E4%B8%80%E4%B8%AA%E5%B8%A6%E6%9C%89%E7%9B%AE%E5%BD%95%E6%96%87%E4%BB%B6"><span class="nav-number">2.4.</span> <span class="nav-text">再添加一个带有目录文件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BC%80%E5%A7%8B%E5%88%9B%E5%BB%BA%E5%88%86%E6%94%AF"><span class="nav-number">2.5.</span> <span class="nav-text">开始创建分支</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%93%E6%A0%87%E7%AD%BE"><span class="nav-number">2.6.</span> <span class="nav-text">打标签</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="liuyanjie"
+      src="/avatar.png">
+  <p class="site-author-name" itemprop="name">liuyanjie</p>
+  <div class="site-description" itemprop="description">KISS DRY</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">13</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/liuyanjie" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;liuyanjie" rel="noopener me" target="_blank"><i class="github fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="/liuyj619@gmail.com" title="E-Mail → liuyj619@gmail.com" rel="noopener me"><i class="envelope fa-fw"></i></a>
+      </span>
+  </div>
+  <div class="cc-license animated" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="https://cdn.jsdelivr.net/npm/@creativecommons/vocabulary@2020.11.3/assets/license_badges/small/by_nc_sa.svg" alt="Creative Commons"></a>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://blog.butonly.com/posts/vcs/git/git-object-model/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/avatar.png">
+      <meta itemprop="name" content="liuyanjie">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liuyanjie's blog">
+      <meta itemprop="description" content="KISS DRY">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Git对象模型：一步一步分析Git底层对象模型 | liuyanjie's blog">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Git对象模型：一步一步分析Git底层对象模型
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2019-06-24 11:00:00" itemprop="dateCreated datePublished" datetime="2019-06-24T11:00:00+08:00">2019-06-24</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2025-11-22 12:38:35" itemprop="dateModified" datetime="2025-11-22T12:38:35+08:00">2025-11-22</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/git/" itemprop="url" rel="index"><span itemprop="name">git</span></a>
+        </span>
+    </span>
+
+  
+  
+  <span class="post-meta-item">
+    
+      <span class="post-meta-item-icon">
+        <i class="far fa-comment"></i>
+      </span>
+      <span class="post-meta-item-text">Disqus：</span>
+    
+    <a title="disqus" href="/posts/vcs/git/git-object-model/#disqus_thread" itemprop="discussionUrl">
+      <span class="post-comments-count disqus-comment-count" data-disqus-identifier="posts/vcs/git/git-object-model/" itemprop="commentCount"></span>
+    </a>
+  </span>
+  
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>25k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>23 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>Git是一个非常强大的版本管理工具，有非常多的概念和命令，也有非常多且复杂的用法。但是其底层模型相对而言却非常简单，了解底层对象模型将非常有助于理解上层命令到底对仓库做了什么。如果想要精通Git，了解底层对象模型也是必不可少的。本文将会通过基本的命令操作，分析每一步操作对仓库数据做了哪些改动，进而分析出Git底层对象模型。</p>
+<h2 id="Git基本概念"><a href="#Git基本概念" class="headerlink" title="Git基本概念"></a>Git基本概念</h2><h3 id="SHA"><a href="#SHA" class="headerlink" title="SHA"></a>SHA</h3><p>所有用来表示项目历史信息的文件，都是通过一个40个字符的（40-digit）“对象名”来索引的，对象名看起来像这样:</p>
+<blockquote>
+<p>6ff87c4664981e4397625791c8ea3bbb5f2279a3</p>
+</blockquote>
+<p>在后边使用对象名时，只使用前面几个字符即可，但是最少需要4个。</p>
+<p>你会在Git里到处看到这种“40个字符”字符串。每一个“对象名”都是对“对象”内容做SHA1哈希计算得来的。这样就意味着两个不同内容的对象几乎不可能（理论上是可能发生碰撞的）有相同的“对象名”。</p>
+<p>这样做会有几个好处：</p>
+<ul>
+<li><p>只要比较对象名，就可以很快的判断两个对象是否相同。</p>
+<p>因为在每个仓库（repository）的“对象名”的计算方法都完全一样，如果同样的内容存在两个不同的仓库中，就会存在相同的“对象名”下。</p>
+</li>
+<li><p>还可以通过检查对象内容的SHA1的哈希值和“对象名”是否相同，来判断对象内容是否正确。</p>
+</li>
+</ul>
+<h3 id="对象"><a href="#对象" class="headerlink" title="对象"></a>对象</h3><p>每个对象(object) 包括三个部分：类型、大小和内容。大小就是指内容的大小，内容取决于对象的类型。</p>
+<p>有四种类型的对象：<code>&quot;blob&quot;</code>、<code>&quot;tree&quot;</code>、<code>&quot;commit&quot;</code> 和 <code>&quot;tag&quot;</code>。</p>
+<p>几乎所有的Git功能都是使用这四个简单的对象类型来完成的。它就像是在你本机的文件系统之上构建一个小的文件系统。</p>
+<h4 id="blob-文件-对象"><a href="#blob-文件-对象" class="headerlink" title="blob (文件) 对象"></a>blob (文件) 对象</h4><p><code>blob</code> 用来存储文件数据，通常是一个文件。</p>
+<p><img data-src="/../../../images/vcs/git/images/object-blob.png" alt="blob"></p>
+<h4 id="tree-目录-对象"><a href="#tree-目录-对象" class="headerlink" title="tree (目录) 对象"></a>tree (目录) 对象</h4><p><code>tree</code> 像一个目录，管理 <code>tree（子目录）</code> 或 <code>blob（文件）</code></p>
+<p><img data-src="/../../../images/vcs/git/images/object-tree.png" alt="tree"></p>
+<h4 id="commit-提交-对象"><a href="#commit-提交-对象" class="headerlink" title="commit (提交) 对象"></a>commit (提交) 对象</h4><p>一个 <code>commit</code> 只指向一个 <code>tree</code>，它用来标记项目某一个特定时间点的状态。<code>commit</code> 保存了树根的 <code>对象名</code>。</p>
+<p>它包括一些关于时间点的元数据，如 <code>时间戳</code>、<code>最近一次提交的作者</code>、<code>指向上次提交（commits）的指针</code> 等等。</p>
+<p><img data-src="/../../../images/vcs/git/images/object-commit.png" alt="tree"></p>
+<figure class="highlight llvm"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p <span class="number">830</span>f<span class="number">4857e9</span>f<span class="number">579818</span><span class="keyword">c</span><span class="number">5e69104</span>d<span class="number">3e2</span><span class="keyword">cc</span><span class="number">30</span>f<span class="number">1</span>f<span class="number">0</span>d<span class="number">0</span>d</span><br><span class="line">tree f<span class="number">25061</span>fa<span class="number">4</span>f<span class="number">8</span>b<span class="number">3</span>bffbf<span class="number">8</span>ebcc<span class="number">3</span>ab<span class="number">2351</span>efdad<span class="number">2</span>f<span class="number">605</span></span><br><span class="line">parent <span class="number">06e13701</span>ac<span class="number">86</span>eb<span class="number">09</span><span class="keyword">c</span><span class="number">2035329</span>a<span class="number">5e1</span><span class="keyword">c</span><span class="number">18</span>f<span class="number">95898</span>cf<span class="number">2</span></span><br><span class="line">author liuyanjie &lt;<span class="keyword">x</span><span class="title">@gmail.com</span>&gt; <span class="number">1526828841</span> <span class="number">+0800</span></span><br><span class="line">committer liuyanjie &lt;<span class="keyword">x</span><span class="title">@gmail.com</span>&gt; <span class="number">1526828841</span> <span class="number">+0800</span></span><br><span class="line"></span><br><span class="line">commit message</span><br></pre></td></tr></table></figure>
+
+<h4 id="tag-标签-对象"><a href="#tag-标签-对象" class="headerlink" title="tag (标签) 对象"></a>tag (标签) 对象</h4><p><img data-src="/../../../images/vcs/git/images/object-tag.png" alt="tag"></p>
+<p>一个 <code>tag</code> 是来标记某一个 <code>commit</code> 的方法。</p>
+<p>实际上 <code>tag</code> 本身是文件名，内容是 <code>commit</code> 的对象名。<code>tag</code> 是 <code>commit</code> 的别名，类似于域名和ip地址的关系。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">$ </span><span class="language-bash"><span class="built_in">cat</span> .git/refs/tags/v0.0.0</span></span><br><span class="line">830f4857e9f579818c5e69104d3e2cc30f1f0d0d</span><br></pre></td></tr></table></figure>
+
+<h4 id="commit-tree-blob"><a href="#commit-tree-blob" class="headerlink" title="commit -&gt; tree -&gt; blob"></a>commit -&gt; tree -&gt; blob</h4><p><img data-src="/../../../images/vcs/git/images/object-c-t-b.png" alt="object-c-t-b"></p>
+<p>从图上可以看出：一个 <code>commit</code> 指向了一棵由 <code>tree</code> 和 <code>blob</code> 构成的 Git 对象树。</p>
+<h3 id="与其他版本控制系统的区别"><a href="#与其他版本控制系统的区别" class="headerlink" title="与其他版本控制系统的区别"></a>与其他版本控制系统的区别</h3><p>Git与你熟悉的大部分版本控制系统的差别是很大的。</p>
+<p>也许你熟悉 <code>Subversion</code>、<code>CVS</code>、<code>Perforce</code>、<code>Mercurial</code> 等等，他们使用 “增量文件系统” （Delta Storage systems）, 就是说它们存储每次提交(commit)之间的差异。</p>
+<p>Git正好与之相反，它会把你的每次提交的文件的全部内容（snapshot）都会记录下来。</p>
+<p>这会是在使用Git时的一个很重要的理念。</p>
+<p>综上，Git对象模型非常简单，与普通的文件系统非常的相似。</p>
+<h2 id="一步一步了解Git在做什么"><a href="#一步一步了解Git在做什么" class="headerlink" title="一步一步了解Git在做什么"></a>一步一步了解Git在做什么</h2><h3 id="初始化仓库"><a href="#初始化仓库" class="headerlink" title="初始化仓库"></a>初始化仓库</h3><p>初始化目录并创建一个Git仓库</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cd</span> git-obj-model</span><br><span class="line"></span><br><span class="line">$ git init</span><br><span class="line">Initialized empty Git repository <span class="keyword">in</span> /Users/liuyanjie/git-obj-model/.git/</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>看一下初始化的git仓库中到底有些什么内容。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line">$ tree .git</span><br><span class="line">.git</span><br><span class="line">├── HEAD</span><br><span class="line">├── config</span><br><span class="line">├── description</span><br><span class="line">├── hooks</span><br><span class="line">│   ├── applypatch-msg.sample</span><br><span class="line">│   ├── commit-msg.sample</span><br><span class="line">│   ├── fsmonitor-watchman.sample</span><br><span class="line">│   ├── post-update.sample</span><br><span class="line">│   ├── pre-applypatch.sample</span><br><span class="line">│   ├── pre-commit.sample</span><br><span class="line">│   ├── pre-push.sample</span><br><span class="line">│   ├── pre-rebase.sample</span><br><span class="line">│   ├── pre-receive.sample</span><br><span class="line">│   ├── prepare-commit-msg.sample</span><br><span class="line">│   └── update.sample</span><br><span class="line">├── info</span><br><span class="line">│   └── exclude</span><br><span class="line">├── objects</span><br><span class="line">│   ├── info</span><br><span class="line">│   └── pack</span><br><span class="line">└── refs</span><br><span class="line">    ├── heads</span><br><span class="line">    └── tags</span><br><span class="line"></span><br><span class="line">8 directories, 15 files</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/config</span><br><span class="line">[core]</span><br><span class="line">	repositoryformatversion = 0</span><br><span class="line">	filemode = <span class="literal">true</span></span><br><span class="line">	bare = <span class="literal">false</span></span><br><span class="line">	logallrefupdates = <span class="literal">true</span></span><br><span class="line">	ignorecase = <span class="literal">true</span></span><br><span class="line">	precomposeunicode = <span class="literal">true</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/HEAD</span><br><span class="line">ref: refs/heads/master</span><br></pre></td></tr></table></figure>
+
+<p>查看仓库状态</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">$ git status</span><br><span class="line">On branch master</span><br><span class="line"></span><br><span class="line">No commits yet</span><br><span class="line"></span><br><span class="line">nothing to commit (create/copy files and use <span class="string">&quot;git add&quot;</span> to track)</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>后面忽略 <code>.git/hooks/</code> 下的文件。</p>
+<h3 id="增加一个文件README-md"><a href="#增加一个文件README-md" class="headerlink" title="增加一个文件README.md"></a>增加一个文件README.md</h3><p>现在创建一个 <code>README.md</code>，查看 <code>.git</code> 目录，发现没有什么变化。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">echo</span> <span class="string">&quot;# Readme&quot;</span> &gt; README.md</span><br><span class="line"></span><br><span class="line">$ tree .git</span><br><span class="line">.git</span><br><span class="line">├── HEAD</span><br><span class="line">├── config</span><br><span class="line">├── description</span><br><span class="line">├── info</span><br><span class="line">│   └── exclude</span><br><span class="line">├── objects</span><br><span class="line">│   ├── info</span><br><span class="line">│   └── pack</span><br><span class="line">└── refs</span><br><span class="line">    ├── heads</span><br><span class="line">    └── tags</span><br><span class="line"></span><br><span class="line">8 directories, 15 files</span><br></pre></td></tr></table></figure>
+
+<p>查看当前状态，可以看到，此时有一个未追踪的 <code>README.md</code> 文件，此文件存在于 <code>工作区</code> 中。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">$ git status</span><br><span class="line">On branch master</span><br><span class="line"></span><br><span class="line">No commits yet</span><br><span class="line"></span><br><span class="line">Untracked files:</span><br><span class="line">  (use <span class="string">&quot;git add &lt;file&gt;...&quot;</span> to include <span class="keyword">in</span> what will be committed)</span><br><span class="line"></span><br><span class="line">	README.md</span><br><span class="line"></span><br><span class="line">nothing added to commit but untracked files present (use <span class="string">&quot;git add&quot;</span> to track)</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>执行 <code>git add</code> 命令后，可以看到增加了两个文件：</p>
+<ul>
+<li>.git&#x2F;index</li>
+<li>.git&#x2F;objects&#x2F;f3&#x2F;954314c1026028e77ea3a765aadefa67b45195</li>
+</ul>
+<blockquote>
+<p>git add 把文件暂存到索引中为下一次提交做准备，git commit 创建新的提交。</p>
+</blockquote>
+<p>应该知道，这应该是一个 <code>blob</code> 类型的文件，里面存储文件内容。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">$ git add README.md</span><br><span class="line"></span><br><span class="line">$ tree .git</span><br><span class="line">.git</span><br><span class="line">├── HEAD</span><br><span class="line">├── config</span><br><span class="line">├── description</span><br><span class="line">├── index</span><br><span class="line">├── info</span><br><span class="line">│   └── exclude</span><br><span class="line">├── objects</span><br><span class="line">│   ├── f3</span><br><span class="line">│   │   └── 954314c1026028e77ea3a765aadefa67b45195</span><br><span class="line">│   ├── info</span><br><span class="line">│   └── pack</span><br><span class="line">└── refs</span><br><span class="line">    ├── heads</span><br><span class="line">    └── tags</span><br><span class="line"></span><br><span class="line">9 directories, 17 files</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>查看当前状态</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">$ git status</span><br><span class="line">On branch master</span><br><span class="line"></span><br><span class="line">No commits yet</span><br><span class="line"></span><br><span class="line">Changes to be committed:</span><br><span class="line">  (use <span class="string">&quot;git rm --cached &lt;file&gt;...&quot;</span> to unstage)</span><br><span class="line"></span><br><span class="line">	new file:   README.md</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>查看对象内容</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p f39543</span><br><span class="line"><span class="comment"># Readme</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>查看暂存区</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ git ls-files --stage</span><br><span class="line">100644 f3954314c1026028e77ea3a765aadefa67b45195 0	README.md</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>.git&#x2F;index 是 Git索引文件，是一个在 <code>工作区</code> 和 <code>仓库</code> 间的 <code>暂存区域(staging area)</code>。</p>
+<p>索引是一个二进制格式的文件，里面存放了与当前暂存内容相关的信息，包括暂存的<code>文件名</code>、<code>文件内容的SHA1哈希串值</code> 和 <code>文件访问权限</code>，整个索引文件的内容以暂存的文件名进行排git ls-files –stage序保存的。</p>
+<p>因为这个文件记录了将要提交的文件, 所以我们才能够多次修改一起提交(commit)。</p>
+<p>所以创建了一个新的提交(commit)，提交的一般是暂存区里的内容, 而不是工作目录中的内容。</p>
+<p>一个Git项目中文件的状态大概分成下面的两大类，而第二大类又分为三小类：</p>
+<ol>
+<li>未被跟踪的文件（Untracked files）</li>
+<li>已被跟踪的文件（Tracked files）<ol>
+<li>被修改 未暂存 的文件（Changed but not updated 或 Modified）</li>
+<li>被修改 已暂存 可以 被提交 的文件（Changes to be committed 或 Staged）</li>
+<li>未修改 的文件（自上次提交以来）(Clean 或 Unmodified)</li>
+</ol>
+</li>
+</ol>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Changes to be committed:</span><br><span class="line">  (no files)</span><br><span class="line">Changes not staged <span class="keyword">for</span> commit:</span><br><span class="line">  (no files)</span><br><span class="line">Untracked files:</span><br><span class="line">? .gitignore</span><br></pre></td></tr></table></figure>
+
+<p>执行 <code>git commit</code> 命令，发现路径下又增加了两个文件：</p>
+<ul>
+<li>.git&#x2F;objects&#x2F;9d&#x2F;978d59f2f22062c0382c859f4c3ef929026303</li>
+<li>.git&#x2F;objects&#x2F;c1&#x2F;067ba0a7ba51f937518c9bc051ea744ca748fe</li>
+</ul>
+<p>从上面的结构图，可以想到：</p>
+<p>提交可定会产生一个提交对象，提交对象指向一个树对象，树对象包含上一步添加的<code>blob</code>对象。</p>
+<p>下面将通过查看文件内容验证这一点。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line">$ git commit -m <span class="string">&quot;First Commmit&quot;</span> README.md</span><br><span class="line"></span><br><span class="line">[master (root-commit) 033fa1a] First Commmit</span><br><span class="line"> 1 file changed, 1 insertion(+)</span><br><span class="line"> create mode 100644 README.md</span><br><span class="line"></span><br><span class="line">$ tree .git</span><br><span class="line">.git</span><br><span class="line">├── COMMIT_EDITMSG</span><br><span class="line">├── HEAD</span><br><span class="line">├── config</span><br><span class="line">├── description</span><br><span class="line">├── index</span><br><span class="line">├── info</span><br><span class="line">│   └── exclude</span><br><span class="line">├── logs</span><br><span class="line">│   ├── HEAD</span><br><span class="line">│   └── refs</span><br><span class="line">│       └── heads</span><br><span class="line">│           └── master</span><br><span class="line">├── objects</span><br><span class="line">│   ├── 03</span><br><span class="line">│   │   └── 3fa1ab71f0d54f348f07a3a0ffcefd52804df5 +</span><br><span class="line">│   ├── c1</span><br><span class="line">│   │   └── 067ba0a7ba51f937518c9bc051ea744ca748fe +</span><br><span class="line">│   ├── f3</span><br><span class="line">│   │   └── 954314c1026028e77ea3a765aadefa67b45195</span><br><span class="line">│   ├── info</span><br><span class="line">│   └── pack</span><br><span class="line">└── refs</span><br><span class="line">    ├── heads</span><br><span class="line">    │   └── master</span><br><span class="line">    └── tags</span><br><span class="line"></span><br><span class="line">14 directories, 23 files</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>查看 <code>033f</code> 对象内容，此时不知道这个文件类型及内容是什么</p>
+<p>此时，<code>commit</code> 对象为初始提交，所以并无 <code>parent</code> 引用。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p 033f</span><br><span class="line">tree c1067ba0a7ba51f937518c9bc051ea744ca748fe</span><br><span class="line">author liuyanjie &lt;x@gmail.com&gt; 1527521894 +0800</span><br><span class="line">committer liuyanjie &lt;x@gmail.com&gt; 1527521894 +0800</span><br><span class="line"></span><br><span class="line">First Commmit</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>查看 <code>c106</code> 对象内容，通过上一步，已知此对象是一个 <code>tree</code> 类型的对象，通过内容可以看到，树类型的对象实际就是存储每行一条数据的列表。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p c106</span><br><span class="line">100644 blob f3954314c1026028e77ea3a765aadefa67b45195	README.md</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>再看 <code>.git/refs/heads/master</code> 文件内容</p>
+<p>文件内容只有一行，内容是 <code>033f</code> 对象。<code>master</code> 即是 <code>master</code> 分支的物理表示。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/master</span><br><span class="line">033fa1ab71f0d54f348f07a3a0ffcefd52804df5</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>同时，还可看到，新增了 <code>.git/logs</code> 目录及内容</p>
+<p>该目录下保存了各个分支的提交记录</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/logs/refs/heads/master</span><br><span class="line">0000000000000000000000000000000000000000 033fa1ab71f0d54f348f07a3a0ffcefd52804df5 liuyanjie &lt;x@gmail.com&gt; 1527521894 +0800	commit (initial): First Commmit</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/logs/HEAD</span><br><span class="line">0000000000000000000000000000000000000000 033fa1ab71f0d54f348f07a3a0ffcefd52804df5 liuyanjie &lt;x@gmail.com&gt; 1527521894 +0800	commit (initial): First Commmit</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>Tag</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ git tag v0.0.1 -m <span class="string">&#x27;tag v0.0.1&#x27;</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>查看目录文件变化</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line">$ tree .git</span><br><span class="line">.git</span><br><span class="line">├── COMMIT_EDITMSG</span><br><span class="line">├── HEAD</span><br><span class="line">├── config</span><br><span class="line">├── description</span><br><span class="line">├── index</span><br><span class="line">├── info</span><br><span class="line">│   └── exclude</span><br><span class="line">├── logs</span><br><span class="line">│   ├── HEAD</span><br><span class="line">│   └── refs</span><br><span class="line">│       └── heads</span><br><span class="line">│           └── master</span><br><span class="line">├── objects</span><br><span class="line">│   ├── 03</span><br><span class="line">│   │   └── 3fa1ab71f0d54f348f07a3a0ffcefd52804df5</span><br><span class="line">│   ├── c1</span><br><span class="line">│   │   └── 067ba0a7ba51f937518c9bc051ea744ca748fe</span><br><span class="line">│   ├── cc</span><br><span class="line">│   │   └── f88a6f1649213499841c33f9bb36d1d8756fb7</span><br><span class="line">│   ├── f3</span><br><span class="line">│   │   └── 954314c1026028e77ea3a765aadefa67b45195</span><br><span class="line">│   ├── info</span><br><span class="line">│   └── pack</span><br><span class="line">└── refs</span><br><span class="line">    ├── heads</span><br><span class="line">    │   └── master</span><br><span class="line">    └── tags</span><br><span class="line">        └── v0.0.1</span><br><span class="line"></span><br><span class="line">15 directories, 25 files</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>查看 <code>.git/refs/tags/v0.0.1</code> 文件内容，可以看到内容恰好是新增的 objects <code>对象名</code>，所以可想而知 <code>ccf8</code> 是一个 <code>tag</code> 类型的对象</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/refs/tags/v0.0.1</span><br><span class="line">ccf88a6f1649213499841c33f9bb36d1d8756fb7</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>查看新增的 <code>ccf8</code> 文件内容，文件指向了 <code>commit</code> 对象 <code>033f</code></p>
+<figure class="highlight crmsh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p ccf8</span><br><span class="line">object <span class="number">033</span>fa1ab71f0d54f348f07a3a0ffcefd52804df5</span><br><span class="line"><span class="keyword">type</span> commit</span><br><span class="line"><span class="keyword">tag</span> <span class="title">v0</span>.<span class="number">0.1</span></span><br><span class="line">tagger liuyanjie <span class="tag">&lt;x@gmail.com&gt;</span> <span class="number">1527523284</span> +<span class="number">0800</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">tag</span> <span class="title">v0</span>.<span class="number">0.1</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>通过以上查看 <code>.git</code> 目录的变化过程，可以大致分析出Git是如何存储这些文件内容的。</p>
+<p>上面只执行了 <code>git add</code> 和 <code>git commit</code> 两条操作。</p>
+<h3 id="继续添加文件"><a href="#继续添加文件" class="headerlink" title="继续添加文件"></a>继续添加文件</h3><figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">echo</span> <span class="string">&quot;# CHANGELOG&quot;</span> &gt; CHANGELOG.md</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">echo</span> <span class="string">&quot;# CONTRIBUTING&quot;</span> &gt; CONTRIBUTING.md</span><br><span class="line"></span><br><span class="line">$ git status</span><br><span class="line">On branch master</span><br><span class="line">Untracked files:</span><br><span class="line">  (use <span class="string">&quot;git add &lt;file&gt;...&quot;</span> to include <span class="keyword">in</span> what will be committed)</span><br><span class="line"></span><br><span class="line">	CHANGELOG.md</span><br><span class="line">	CONTRIBUTING.md</span><br><span class="line"></span><br><span class="line">nothing added to commit but untracked files present (use <span class="string">&quot;git add&quot;</span> to track)</span><br><span class="line"></span><br><span class="line">$ git add CHANGELOG.md CONTRIBUTING.md</span><br><span class="line"></span><br><span class="line">$ git status</span><br><span class="line">On branch master</span><br><span class="line">Changes to be committed:</span><br><span class="line">  (use <span class="string">&quot;git reset HEAD &lt;file&gt;...&quot;</span> to unstage)</span><br><span class="line"></span><br><span class="line">	new file:   CHANGELOG.md</span><br><span class="line">	new file:   CONTRIBUTING.md</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line">$ tree .git</span><br><span class="line">.git</span><br><span class="line">├── COMMIT_EDITMSG</span><br><span class="line">├── HEAD</span><br><span class="line">├── config</span><br><span class="line">├── description</span><br><span class="line">├── index</span><br><span class="line">├── info</span><br><span class="line">│   └── exclude</span><br><span class="line">├── logs</span><br><span class="line">│   ├── HEAD</span><br><span class="line">│   └── refs</span><br><span class="line">│       └── heads</span><br><span class="line">│           └── master</span><br><span class="line">├── objects</span><br><span class="line">│   ├── 03</span><br><span class="line">│   │   └── 3fa1ab71f0d54f348f07a3a0ffcefd52804df5</span><br><span class="line">│   ├── a0</span><br><span class="line">│   │   └── cf709bc0991b5340080f944d02894dc1596d46</span><br><span class="line">│   ├── c1</span><br><span class="line">│   │   └── 067ba0a7ba51f937518c9bc051ea744ca748fe</span><br><span class="line">│   ├── c6</span><br><span class="line">│   │   └── b9e95b39b8cd8ead8bbf4b118104741017de1b</span><br><span class="line">│   ├── cc</span><br><span class="line">│   │   └── f88a6f1649213499841c33f9bb36d1d8756fb7</span><br><span class="line">│   ├── f3</span><br><span class="line">│   │   └── 954314c1026028e77ea3a765aadefa67b45195</span><br><span class="line">│   ├── info</span><br><span class="line">│   └── pack</span><br><span class="line">└── refs</span><br><span class="line">    ├── heads</span><br><span class="line">    │   └── master</span><br><span class="line">    └── tags</span><br><span class="line">        └── v0.0.1</span><br><span class="line"></span><br><span class="line">17 directories, 27 files</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ git ls-files --stage</span><br><span class="line">100644 a0cf709bc0991b5340080f944d02894dc1596d46 0	CHANGELOG.md</span><br><span class="line">100644 c6b9e95b39b8cd8ead8bbf4b118104741017de1b 0	CONTRIBUTING.md</span><br><span class="line">100644 f3954314c1026028e77ea3a765aadefa67b45195 0	README.md</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>分别查看一下各个文件的内容</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p a0cf</span><br><span class="line"><span class="comment"># CHANGELOG</span></span><br><span class="line"></span><br><span class="line">$ git cat-file -p c6b9</span><br><span class="line"><span class="comment"># CONTRIBUTING</span></span><br><span class="line"></span><br><span class="line">$ git cat-file -p f395</span><br><span class="line"><span class="comment"># Readme</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>再查看一下树对象的内容，然而并没有任何变化</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p c106</span><br><span class="line">100644 blob f3954314c1026028e77ea3a765aadefa67b45195	README.md</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>下面提交这两个文件，可以通过日志方便的查看信息。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">$ git commit --all -m <span class="string">&quot;add CHANGELOG.md and CONTRIBUTING.md files&quot;</span></span><br><span class="line">[master 28baf4f] add CHANGELOG.md and CONTRIBUTING.md files</span><br><span class="line"> 2 files changed, 2 insertions(+)</span><br><span class="line"> create mode 100644 CHANGELOG.md</span><br><span class="line"> create mode 100644 CONTRIBUTING.md</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>同样再看一下<code>.git</code>目录下的内容</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line">$ tree .git</span><br><span class="line">.git</span><br><span class="line">├── COMMIT_EDITMSG</span><br><span class="line">├── HEAD</span><br><span class="line">├── config</span><br><span class="line">├── description</span><br><span class="line">├── index</span><br><span class="line">├── info</span><br><span class="line">│   └── exclude</span><br><span class="line">├── logs</span><br><span class="line">│   ├── HEAD</span><br><span class="line">│   └── refs</span><br><span class="line">│       └── heads</span><br><span class="line">│           └── master</span><br><span class="line">├── objects</span><br><span class="line">│   ├── 03</span><br><span class="line">│   │   └── 3fa1ab71f0d54f348f07a3a0ffcefd52804df5</span><br><span class="line">│   ├── 28</span><br><span class="line">│   │   └── baf4f77fb49abf99c18bc1c12363d898f3ced7</span><br><span class="line">│   ├── 2c</span><br><span class="line">│   │   └── affd90cd736e58f516e3988e3af84f5fa42b4f</span><br><span class="line">│   ├── a0</span><br><span class="line">│   │   └── cf709bc0991b5340080f944d02894dc1596d46</span><br><span class="line">│   ├── c1</span><br><span class="line">│   │   └── 067ba0a7ba51f937518c9bc051ea744ca748fe</span><br><span class="line">│   ├── c6</span><br><span class="line">│   │   └── b9e95b39b8cd8ead8bbf4b118104741017de1b</span><br><span class="line">│   ├── cc</span><br><span class="line">│   │   └── f88a6f1649213499841c33f9bb36d1d8756fb7</span><br><span class="line">│   ├── f3</span><br><span class="line">│   │   └── 954314c1026028e77ea3a765aadefa67b45195</span><br><span class="line">│   ├── info</span><br><span class="line">│   └── pack</span><br><span class="line">└── refs</span><br><span class="line">    ├── heads</span><br><span class="line">    │   └── master</span><br><span class="line">    └── tags</span><br><span class="line">        └── v0.0.1</span><br><span class="line"></span><br><span class="line">19 directories, 29 files</span><br></pre></td></tr></table></figure>
+
+<p>查看一下master上的提交日志，刚刚提交内容在新的一行，与首次提交稍微有点差别，首次提交是commit (initial)。</p>
+<p>还可以发现第二次提交的第一列和第一次提交的第二列一样，可以猜到，第一列指向上一次的提交对象。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/logs/refs/heads/master</span><br><span class="line">0000000000000000000000000000000000000000 033fa1ab71f0d54f348f07a3a0ffcefd52804df5 liuyanjie &lt;x@gmail.com&gt; 1527521894 +0800	commit (initial): First Commmit</span><br><span class="line">033fa1ab71f0d54f348f07a3a0ffcefd52804df5 28baf4f77fb49abf99c18bc1c12363d898f3ced7 liuyanjie &lt;x@gmail.com&gt; 1527524452 +0800	commit: add CHANGELOG.md and CONTRIBUTING.md files</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>查看 <code>28ba</code></p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p 28ba</span><br><span class="line">tree 2caffd90cd736e58f516e3988e3af84f5fa42b4f</span><br><span class="line">parent 033fa1ab71f0d54f348f07a3a0ffcefd52804df5</span><br><span class="line">author liuyanjie &lt;x@gmail.com&gt; 1527524452 +0800</span><br><span class="line">committer liuyanjie &lt;x@gmail.com&gt; 1527524452 +0800</span><br><span class="line"></span><br><span class="line">add CHANGELOG.md and CONTRIBUTING.md files</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>相比 <code>033f</code>，<code>28ba</code> 多了 parent 字段 且 parent 字段值是 <code>033f</code></p>
+<p>同时 <code>master</code> 也指向了新的提交对象。</p>
+<p>第一次产生的提交对象同样存在于目录当中。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/master</span><br><span class="line">28baf4f77fb49abf99c18bc1c12363d898f3ced7</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>在看树对象<code>2caf</code>，发现相比之前，多了两行，分别指向新增加的文件。</p>
+<p><code>README.md</code> 文件出现在了 <code>2caf</code> 对象中，实际上，它同时还存在于 <code>c106</code> 对象中。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p 2caf</span><br><span class="line">100644 blob a0cf709bc0991b5340080f944d02894dc1596d46	CHANGELOG.md</span><br><span class="line">100644 blob c6b9e95b39b8cd8ead8bbf4b118104741017de1b	CONTRIBUTING.md</span><br><span class="line">100644 blob f3954314c1026028e77ea3a765aadefa67b45195	README.md</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p c106</span><br><span class="line">100644 blob f3954314c1026028e77ea3a765aadefa67b45195	README.md</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>到现在为止，整个目录下有3个文件，而 <code>.git</code> 目录下已经有多个文件，为了跟踪记录版本。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">ls</span></span><br><span class="line">CHANGELOG.md CONTRIBUTING.md README.md</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>通过以上 <code>.git</code> 目录变化，可以发现：</p>
+<p>每次提交都会产出一 <code>commit</code> 对象，这些 <code>commit</code> 通过 <code>parent</code>，形成一个由高版本到低版本的链表，追溯这个链表，可以回溯到任意版本。</p>
+<p><code>commit</code> 对象保存一个 <code>tree</code> 的根节点，根节点下面再包含 <code>blob</code> 或 <code>tree</code>，类似普通文件系统结构，和上面的图一致，从根节点开始，可以找到某一般版本下的所有文件。</p>
+<p>在每一颗树下，因为都是使用类似指针的结构，所以每次修改都是将变化的文件，重新创建一个blob文件，并修改相应指针。</p>
+<p>目录中的 <code>.git/refs/heads/master</code> 指向某一次提交，当由另外一个分支的时候，会有 <code>.git/refs/heads/branch-xxx</code> 文件指向另外一次提交，而初始时与父分支指向相同。</p>
+<h3 id="再添加一个带有目录文件"><a href="#再添加一个带有目录文件" class="headerlink" title="再添加一个带有目录文件"></a>再添加一个带有目录文件</h3><figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">mkdir</span> lib</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">echo</span> <span class="string">&quot;// Author: liuyanjie&quot;</span> &gt; ./lib/index.js</span><br><span class="line"></span><br><span class="line">$ git add lib/index.js</span><br><span class="line"></span><br><span class="line">$ git commit -m <span class="string">&quot;add lib/index.js&quot;</span> lib/index.js</span><br><span class="line">[master 2b9fc85] add lib/index.js</span><br><span class="line"> 1 file changed, 1 insertion(+)</span><br><span class="line"> create mode 100644 lib/index.js</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p 2b9fc85</span><br><span class="line">tree 9609811e44367d44f2915435f4454716e1e535fd</span><br><span class="line">parent 28baf4f77fb49abf99c18bc1c12363d898f3ced7</span><br><span class="line">author liuyanjie &lt;x@gmail.com&gt; 1527556745 +0800</span><br><span class="line">committer liuyanjie &lt;x@gmail.com&gt; 1527556745 +0800</span><br><span class="line"></span><br><span class="line">add lib/index.js</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p 9609</span><br><span class="line">100644 blob a0cf709bc0991b5340080f944d02894dc1596d46	CHANGELOG.md</span><br><span class="line">100644 blob c6b9e95b39b8cd8ead8bbf4b118104741017de1b	CONTRIBUTING.md</span><br><span class="line">100644 blob f3954314c1026028e77ea3a765aadefa67b45195	README.md</span><br><span class="line">040000 tree 2fb9045bb558889ea2bd8cc5d8fe45e7247706da	lib</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ git cat-file -p 2fb9</span><br><span class="line">100644 blob 39a204af28de9b4f0411735e597e0da7416ca35a	index.js</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>上面连续几步和之前的效果一样，但是可以看到，在树对象 <code>9609</code> 中，包含了另一个树对象 <code>2fb9</code> ，这个对象的内容指向<code>index.js</code>文件。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/logs/refs/heads/master</span><br><span class="line">0000000000000000000000000000000000000000 033fa1ab71f0d54f348f07a3a0ffcefd52804df5 liuyanjie &lt;x@gmail.com&gt; 1527521894 +0800	commit (initial): First Commmit</span><br><span class="line">033fa1ab71f0d54f348f07a3a0ffcefd52804df5 28baf4f77fb49abf99c18bc1c12363d898f3ced7 liuyanjie &lt;x@gmail.com&gt; 1527524452 +0800	commit: add CHANGELOG.md and CONTRIBUTING.md files</span><br><span class="line">28baf4f77fb49abf99c18bc1c12363d898f3ced7 2b9fc8524bac21d5d5c2f988b5793315ce93abc6 liuyanjie &lt;x@gmail.com&gt; 1527556745 +0800	commit: add lib/index.js</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>git log</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">commit 2b9fc8524bac21d5d5c2f988b5793315ce93abc6 (HEAD -&gt; master)</span><br><span class="line">Author: liuyanjie &lt;x@gmail.com&gt;</span><br><span class="line">Date:   Tue May 29 09:19:05 2018 +0800</span><br><span class="line"></span><br><span class="line">    add lib/index.js</span><br><span class="line"></span><br><span class="line">commit 28baf4f77fb49abf99c18bc1c12363d898f3ced7</span><br><span class="line">Author: liuyanjie &lt;x@gmail.com&gt;</span><br><span class="line">Date:   Tue May 29 00:20:52 2018 +0800</span><br><span class="line"></span><br><span class="line">    add CHANGELOG.md and CONTRIBUTING.md files</span><br><span class="line"></span><br><span class="line">commit 033fa1ab71f0d54f348f07a3a0ffcefd52804df5 (tag: v0.0.1)</span><br><span class="line">Author: liuyanjie &lt;x@gmail.com&gt;</span><br><span class="line">Date:   Mon May 28 23:38:14 2018 +0800</span><br><span class="line"></span><br><span class="line">    First Commmit</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<h3 id="开始创建分支"><a href="#开始创建分支" class="headerlink" title="开始创建分支"></a>开始创建分支</h3><p>创建并切换到分支 <code>feature-a</code></p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">$ git branch -v</span><br><span class="line"></span><br><span class="line">* master 2b9fc85 add lib/index.js</span><br><span class="line"></span><br><span class="line">$ git checkout -b feature-a</span><br><span class="line">Switched to a new branch <span class="string">&#x27;feature-a&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># liuyanjie @ bmw in ~/git-obj-model on git:feature-a o [9:25:01]</span></span><br><span class="line">$ git branch -v</span><br><span class="line"></span><br><span class="line">* feature-a 2b9fc85 add lib/index.js</span><br><span class="line">  master    2b9fc85 add lib/index.js</span><br><span class="line"></span><br><span class="line">$ git status</span><br><span class="line">On branch feature-a</span><br><span class="line">nothing to commit, working tree clean</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br></pre></td><td class="code"><pre><span class="line">$ tree .git</span><br><span class="line">.git</span><br><span class="line">├── COMMIT_EDITMSG</span><br><span class="line">├── HEAD</span><br><span class="line">├── config</span><br><span class="line">├── description</span><br><span class="line">├── index</span><br><span class="line">├── info</span><br><span class="line">│   └── exclude</span><br><span class="line">├── logs</span><br><span class="line">│   ├── HEAD</span><br><span class="line">│   └── refs</span><br><span class="line">│       └── heads</span><br><span class="line">│           ├── feature-a</span><br><span class="line">│           └── master</span><br><span class="line">├── objects</span><br><span class="line">│   ├── 03</span><br><span class="line">│   │   └── 3fa1ab71f0d54f348f07a3a0ffcefd52804df5</span><br><span class="line">│   ├── 28</span><br><span class="line">│   │   └── baf4f77fb49abf99c18bc1c12363d898f3ced7</span><br><span class="line">│   ├── 2b</span><br><span class="line">│   │   └── 9fc8524bac21d5d5c2f988b5793315ce93abc6</span><br><span class="line">│   ├── 2c</span><br><span class="line">│   │   └── affd90cd736e58f516e3988e3af84f5fa42b4f</span><br><span class="line">│   ├── 2f</span><br><span class="line">│   │   └── b9045bb558889ea2bd8cc5d8fe45e7247706da</span><br><span class="line">│   ├── 39</span><br><span class="line">│   │   └── a204af28de9b4f0411735e597e0da7416ca35a</span><br><span class="line">│   ├── 96</span><br><span class="line">│   │   └── 09811e44367d44f2915435f4454716e1e535fd</span><br><span class="line">│   ├── a0</span><br><span class="line">│   │   └── cf709bc0991b5340080f944d02894dc1596d46</span><br><span class="line">│   ├── c1</span><br><span class="line">│   │   └── 067ba0a7ba51f937518c9bc051ea744ca748fe</span><br><span class="line">│   ├── c6</span><br><span class="line">│   │   └── b9e95b39b8cd8ead8bbf4b118104741017de1b</span><br><span class="line">│   ├── cc</span><br><span class="line">│   │   └── f88a6f1649213499841c33f9bb36d1d8756fb7</span><br><span class="line">│   ├── f3</span><br><span class="line">│   │   └── 954314c1026028e77ea3a765aadefa67b45195</span><br><span class="line">│   ├── info</span><br><span class="line">│   └── pack</span><br><span class="line">└── refs</span><br><span class="line">    ├── heads</span><br><span class="line">    │   ├── feature-a</span><br><span class="line">    │   └── master</span><br><span class="line">    └── tags</span><br><span class="line">        └── v0.0.1</span><br><span class="line"></span><br><span class="line">23 directories, 35 files</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>看一下<code>.git</code>文件内容，可以看到<code>.git/refs/heads</code>目录下多了个<code>feature-a</code></p>
+<p>查看一下 <code>feature-a</code> 的相关内容，指向的提交对象和 <code>master</code> 一样，并指明 <code>Created from HEAD</code>。</p>
+<p>从内容中可以看出，两个分支指向同一个提交对象 <code>1ad0e5</code>，但是两个分支的日志不同。</p>
+<p>日志记录了分支的历史，而提交对象记录了分支的数据内容和所有分支的历史。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/feature-a</span><br><span class="line">2b9fc8524bac21d5d5c2f988b5793315ce93abc6</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/master</span><br><span class="line">2b9fc8524bac21d5d5c2f988b5793315ce93abc6</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/logs/refs/heads/feature-a</span><br><span class="line">0000000000000000000000000000000000000000 2b9fc8524bac21d5d5c2f988b5793315ce93abc6 liuyanjie &lt;x@gmail.com&gt; 1527557101 +0800	branch: Created from HEAD</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/logs/refs/heads/master</span><br><span class="line">0000000000000000000000000000000000000000 033fa1ab71f0d54f348f07a3a0ffcefd52804df5 liuyanjie &lt;x@gmail.com&gt; 1527521894 +0800	commit (initial): First Commmit</span><br><span class="line">033fa1ab71f0d54f348f07a3a0ffcefd52804df5 28baf4f77fb49abf99c18bc1c12363d898f3ced7 liuyanjie &lt;x@gmail.com&gt; 1527524452 +0800	commit: add CHANGELOG.md and CONTRIBUTING.md files</span><br><span class="line">28baf4f77fb49abf99c18bc1c12363d898f3ced7 2b9fc8524bac21d5d5c2f988b5793315ce93abc6 liuyanjie &lt;x@gmail.com&gt; 1527556745 +0800	commit: add lib/index.js</span><br></pre></td></tr></table></figure>
+
+<p>初始化<code>package.json</code></p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ npm init</span><br><span class="line">Is this ok? (<span class="built_in">yes</span>)</span><br></pre></td></tr></table></figure>
+
+<p>安装 <code>bluebird</code></p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ npm install bluebird --save</span><br><span class="line">npm notice created a lockfile as package-lock.json. You should commit this file.</span><br><span class="line">npm WARN git-obj-model@1.0.0 No description</span><br><span class="line">npm WARN git-obj-model@1.0.0 No repository field.</span><br><span class="line"></span><br><span class="line">+ bluebird@3.5.1</span><br><span class="line">added 1 package <span class="keyword">in</span> 1.999s</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>添加文件到版本库，并查看变化。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ git add package.json</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/feature-a</span><br><span class="line">2b9fc8524bac21d5d5c2f988b5793315ce93abc6</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/master</span><br><span class="line">2b9fc8524bac21d5d5c2f988b5793315ce93abc6</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>提交文件到版本库，并查看变化，提交指针已经指向新的提交对象，分支的版本超前于master，因为parent指向<code>1ad0e5</code></p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">$ git commit package.json -m <span class="string">&#x27;add package.json&#x27;</span></span><br><span class="line">[feature-a 74ce192] add package.json</span><br><span class="line"> 1 file changed, 17 insertions(+)</span><br><span class="line"> create mode 100644 package.json</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/master</span><br><span class="line">2b9fc8524bac21d5d5c2f988b5793315ce93abc6</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/feature-a</span><br><span class="line">74ce19245be785772b33e1193df0d2c6a940ed10</span><br><span class="line"></span><br><span class="line">$ git cat-file -p 74ce</span><br><span class="line">tree 9d23f8ad2ecc9f8e49d78174bcc6e4668ca7f031</span><br><span class="line">parent 2b9fc8524bac21d5d5c2f988b5793315ce93abc6</span><br><span class="line">author liuyanjie &lt;x@gmail.com&gt; 1527557656 +0800</span><br><span class="line">committer liuyanjie &lt;x@gmail.com&gt; 1527557656 +0800</span><br><span class="line"></span><br><span class="line">add package.json</span><br><span class="line"></span><br><span class="line">$ git cat-file -p 9d23</span><br><span class="line">100644 blob a0cf709bc0991b5340080f944d02894dc1596d46	CHANGELOG.md</span><br><span class="line">100644 blob c6b9e95b39b8cd8ead8bbf4b118104741017de1b	CONTRIBUTING.md</span><br><span class="line">100644 blob f3954314c1026028e77ea3a765aadefa67b45195	README.md</span><br><span class="line">040000 tree 2fb9045bb558889ea2bd8cc5d8fe45e7247706da	lib</span><br><span class="line">100644 blob 5ee275ce022007c38d187c58aef13f8d9e04b553	package.json</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>合并分支 <code>feature-a</code> 到 <code>master</code> 分支，可以看到 <code>master</code> 分支跟上了 <code>feature-a</code>，只改指针既可，非常快。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">$ git checkout master</span><br><span class="line">Switched to branch <span class="string">&#x27;master&#x27;</span></span><br><span class="line"></span><br><span class="line">$ git merge feature-a --no-ff</span><br><span class="line">Merge made by the <span class="string">&#x27;recursive&#x27;</span> strategy.</span><br><span class="line"> package.json | 17 +++++++++++++++++</span><br><span class="line"> 1 file changed, 17 insertions(+)</span><br><span class="line"> create mode 100644 package.json</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/master</span><br><span class="line">b98c36254dba6e169429c2be57b1bbeccb6e1f28</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/feature-a</span><br><span class="line">74ce19245be785772b33e1193df0d2c6a940ed10</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ tig</span><br><span class="line"></span><br><span class="line">2018-05-29 09:37 liuyanjie M─┐ [master] Merge branch <span class="string">&#x27;feature-a&#x27;</span></span><br><span class="line">2018-05-29 09:34 liuyanjie │ o [feature-a] add package.json</span><br><span class="line">2018-05-29 09:19 liuyanjie o─┘ add lib/index.js</span><br><span class="line">2018-05-29 00:20 liuyanjie o add CHANGELOG.md and CONTRIBUTING.md files</span><br><span class="line">2018-05-28 23:38 liuyanjie I &lt;v0.0.1&gt; First Commmit</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>修改 <code>master</code> 分支，编辑文件并提交</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">$ git checkout master</span><br><span class="line">Already on <span class="string">&#x27;master&#x27;</span></span><br><span class="line"></span><br><span class="line">$ <span class="built_in">echo</span> -e <span class="string">&quot;\n\n# About&quot;</span> &gt;&gt; README.md</span><br><span class="line"></span><br><span class="line">$ git commit README.md -m <span class="string">&quot;add About Me&quot;</span></span><br><span class="line">[master cc52745] add About Me</span><br><span class="line"> 1 file changed, 4 insertions(+)</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> README.md</span><br><span class="line"><span class="comment"># Readme</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment"># About</span></span><br></pre></td></tr></table></figure>
+
+<p>修改 <code>feature-a</code> 分支</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">$ git checkout feature-a</span><br><span class="line">Switched to branch <span class="string">&#x27;feature-a&#x27;</span></span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> README.md</span><br><span class="line"><span class="comment"># Readme</span></span><br><span class="line"></span><br><span class="line">$ <span class="built_in">echo</span> -e <span class="string">&quot;\n\n# About&quot;</span> &gt;&gt; README.md</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> README.md</span><br><span class="line"><span class="comment"># Readme</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment"># About</span></span><br><span class="line"></span><br><span class="line">$ git add README.md</span><br><span class="line"></span><br><span class="line">$ git commit README.md -m <span class="string">&quot;add About Me&quot;</span></span><br><span class="line">[feature-a fd885cf] add About Me</span><br><span class="line"> 1 file changed, 3 insertions(+)</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>查看分支头和历史记录，可以看到分支头指向不同的提交对象，而提交对象，又来源于同一个提交对象<code>0cb214741c044af3fb4677fe72e3ae175f3e0358</code>，两个分支之间存在交叉。</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/feature-a</span><br><span class="line">74ce19245be785772b33e1193df0d2c6a940ed10</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/master</span><br><span class="line">cc52745b13b00c672c7ac9b1dc42336953293b7a</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/logs/refs/heads/feature-a</span><br><span class="line">0000000000000000000000000000000000000000 2b9fc8524bac21d5d5c2f988b5793315ce93abc6 liuyanjie &lt;x@gmail.com&gt; 1527557101 +0800	branch: Created from HEAD</span><br><span class="line">2b9fc8524bac21d5d5c2f988b5793315ce93abc6 74ce19245be785772b33e1193df0d2c6a940ed10 liuyanjie &lt;x@gmail.com&gt; 1527557656 +0800	commit: add package.json</span><br><span class="line">74ce19245be785772b33e1193df0d2c6a940ed10 fd885cfcd548a24fabb2f5b49ea60beadc8c5912 liuyanjie &lt;x@gmail.com&gt; 1527558668 +0800	commit: add About Me</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/logs/refs/heads/master</span><br><span class="line">0000000000000000000000000000000000000000 033fa1ab71f0d54f348f07a3a0ffcefd52804df5 liuyanjie &lt;x@gmail.com&gt; 1527521894 +0800	commit (initial): First Commmit</span><br><span class="line">033fa1ab71f0d54f348f07a3a0ffcefd52804df5 28baf4f77fb49abf99c18bc1c12363d898f3ced7 liuyanjie &lt;x@gmail.com&gt; 1527524452 +0800	commit: add CHANGELOG.md and CONTRIBUTING.md files</span><br><span class="line">28baf4f77fb49abf99c18bc1c12363d898f3ced7 2b9fc8524bac21d5d5c2f988b5793315ce93abc6 liuyanjie &lt;x@gmail.com&gt; 1527556745 +0800	commit: add lib/index.js</span><br><span class="line">2b9fc8524bac21d5d5c2f988b5793315ce93abc6 b98c36254dba6e169429c2be57b1bbeccb6e1f28 liuyanjie &lt;x@gmail.com&gt; 1527557853 +0800	merge feature-a: Merge made by the <span class="string">&#x27;recursive&#x27;</span> strategy.</span><br><span class="line">b98c36254dba6e169429c2be57b1bbeccb6e1f28 cc52745b13b00c672c7ac9b1dc42336953293b7a liuyanjie &lt;x@gmail.com&gt; 1527558514 +0800	commit: add About Me</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>切换到 <code>master</code> 分支，再次合并 <code>feature-a</code> 到 <code>master</code></p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">$ git checkout master</span><br><span class="line">Switched to branch <span class="string">&#x27;master&#x27;</span></span><br><span class="line"></span><br><span class="line">$ git merge feature-a</span><br><span class="line">Auto-merging README.md</span><br><span class="line">CONFLICT (content): Merge conflict <span class="keyword">in</span> README.md</span><br><span class="line">Automatic merge failed; fix conflicts and <span class="keyword">then</span> commit the result.</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> README.md</span><br><span class="line"><span class="comment"># Readme</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">&lt;&lt;&lt;&lt;&lt;&lt;&lt; <span class="string">HEAD</span></span><br><span class="line"><span class="string">## About</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">=======</span></span><br><span class="line"><span class="string">## About</span></span><br><span class="line"><span class="string">&gt;&gt;&gt;&gt;&gt;&gt;&gt; feature-a</span></span><br><span class="line"><span class="string"></span></span><br></pre></td></tr></table></figure>
+
+<p>解决冲突之后的文件</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> README.md</span><br><span class="line"><span class="comment"># Readme</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment">## About</span></span><br><span class="line"></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">$ git status</span><br><span class="line">On branch master</span><br><span class="line">You have unmerged paths.</span><br><span class="line">  (fix conflicts and run <span class="string">&quot;git commit&quot;</span>)</span><br><span class="line">  (use <span class="string">&quot;git merge --abort&quot;</span> to abort the merge)</span><br><span class="line"></span><br><span class="line">Unmerged paths:</span><br><span class="line">  (use <span class="string">&quot;git add &lt;file&gt;...&quot;</span> to mark resolution)</span><br><span class="line"></span><br><span class="line">	both modified:   README.md</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ git commit README.md -m <span class="string">&#x27;fix conflict&#x27;</span></span><br><span class="line">fatal: cannot <span class="keyword">do</span> a partial commit during a merge.</span><br><span class="line"></span><br><span class="line">$ git commit -a</span><br><span class="line">[master 5a68c74] Merge branch <span class="string">&#x27;feature-a&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/feature-a</span><br><span class="line">fd885cfcd548a24fabb2f5b49ea60beadc8c5912</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/refs/heads/master</span><br><span class="line">5a68c7402c30ae44fd82dadba2d8f148efb75541</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/logs/refs/heads/master</span><br><span class="line">0000000000000000000000000000000000000000 033fa1ab71f0d54f348f07a3a0ffcefd52804df5 liuyanjie &lt;x@gmail.com&gt; 1527521894 +0800	commit (initial): First Commmit</span><br><span class="line">033fa1ab71f0d54f348f07a3a0ffcefd52804df5 28baf4f77fb49abf99c18bc1c12363d898f3ced7 liuyanjie &lt;x@gmail.com&gt; 1527524452 +0800	commit: add CHANGELOG.md and CONTRIBUTING.md files</span><br><span class="line">28baf4f77fb49abf99c18bc1c12363d898f3ced7 2b9fc8524bac21d5d5c2f988b5793315ce93abc6 liuyanjie &lt;x@gmail.com&gt; 1527556745 +0800	commit: add lib/index.js</span><br><span class="line">2b9fc8524bac21d5d5c2f988b5793315ce93abc6 b98c36254dba6e169429c2be57b1bbeccb6e1f28 liuyanjie &lt;x@gmail.com&gt; 1527557853 +0800	merge feature-a: Merge made by the <span class="string">&#x27;recursive&#x27;</span> strategy.</span><br><span class="line">b98c36254dba6e169429c2be57b1bbeccb6e1f28 cc52745b13b00c672c7ac9b1dc42336953293b7a liuyanjie &lt;x@gmail.com&gt; 1527558514 +0800	commit: add About Me</span><br><span class="line">cc52745b13b00c672c7ac9b1dc42336953293b7a 5a68c7402c30ae44fd82dadba2d8f148efb75541 liuyanjie &lt;x@gmail.com&gt; 1527559277 +0800	commit (merge): Merge branch <span class="string">&#x27;feature-a&#x27;</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">$ git merge --<span class="built_in">stat</span> feature-a</span><br><span class="line">Already up to <span class="built_in">date</span>.</span><br><span class="line"></span><br><span class="line">$ git branch -d feature-a</span><br><span class="line">Deleted branch feature-a (was fd885cf).</span><br><span class="line"></span><br><span class="line">$ git branch</span><br><span class="line"></span><br><span class="line">$ git cat-file -p fd88</span><br><span class="line">tree 82e47e13f87031cab7c47b455744bc4ed3fdba3c</span><br><span class="line">parent 74ce19245be785772b33e1193df0d2c6a940ed10</span><br><span class="line">author liuyanjie &lt;x@gmail.com&gt; 1527558668 +0800</span><br><span class="line">committer liuyanjie &lt;x@gmail.com&gt; 1527558668 +0800</span><br><span class="line"></span><br><span class="line">add About Me</span><br><span class="line"></span><br><span class="line">$ git cat-file -p 5a68</span><br><span class="line">tree 42564bab966d59e3501a1903c1cb2066adc2bd2d</span><br><span class="line">parent cc52745b13b00c672c7ac9b1dc42336953293b7a</span><br><span class="line">parent fd885cfcd548a24fabb2f5b49ea60beadc8c5912</span><br><span class="line">author liuyanjie &lt;x@gmail.com&gt; 1527559277 +0800</span><br><span class="line">committer liuyanjie &lt;x@gmail.com&gt; 1527559277 +0800</span><br><span class="line"></span><br><span class="line">Merge branch <span class="string">&#x27;feature-a&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">$ git <span class="built_in">log</span> --graph --all --pretty=format:<span class="string">&#x27;%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)&lt;%an&gt;%Creset&#x27;</span> --abbrev-commit --<span class="built_in">date</span>=relative</span><br><span class="line">*   5a68c74 - (HEAD -&gt; master) Merge branch <span class="string">&#x27;feature-a&#x27;</span> (7 minutes ago) &lt;liuyanjie&gt;</span><br><span class="line">|\</span><br><span class="line">| * fd885cf - add About Me (17 minutes ago) &lt;liuyanjie&gt;</span><br><span class="line">* | cc52745 - add About Me (20 minutes ago) &lt;liuyanjie&gt;</span><br><span class="line">* |   b98c362 - Merge branch <span class="string">&#x27;feature-a&#x27;</span> (31 minutes ago) &lt;liuyanjie&gt;</span><br><span class="line">|\ \</span><br><span class="line">| |/</span><br><span class="line">| * 74ce192 - add package.json (34 minutes ago) &lt;liuyanjie&gt;</span><br><span class="line">|/</span><br><span class="line">* 2b9fc85 - add lib/index.js (49 minutes ago) &lt;liuyanjie&gt;</span><br><span class="line">* 28baf4f - add CHANGELOG.md and CONTRIBUTING.md files (10 hours ago) &lt;liuyanjie&gt;</span><br><span class="line">* 033fa1a - (tag: v0.0.1) First Commmit (11 hours ago) &lt;liuyanjie&gt;</span><br></pre></td></tr></table></figure>
+
+<p>配置命令别名</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ git config --global alias.lg <span class="string">&quot;log --graph --all --pretty=format:&#x27;%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)&lt;%an&gt;%Creset&#x27; --abbrev-commit --date=relative&quot;</span></span><br><span class="line">git lg</span><br></pre></td></tr></table></figure>
+
+<h3 id="打标签"><a href="#打标签" class="headerlink" title="打标签"></a>打标签</h3><figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">$ git tag -a v0.0.2 -m <span class="string">&quot;v0.0.2&quot;</span></span><br><span class="line">v0.0.1</span><br><span class="line">v0.0.2</span><br><span class="line"></span><br><span class="line">$ <span class="built_in">cat</span> .git/refs/tags/v0.0.2</span><br><span class="line">174c530154ab3b4d4d322bcbd66cdde18882eb00</span><br><span class="line"></span><br><span class="line">$ git cat-file -p 174c</span><br><span class="line">object 5a68c7402c30ae44fd82dadba2d8f148efb75541</span><br><span class="line"><span class="built_in">type</span> commit</span><br><span class="line">tag v0.0.2</span><br><span class="line">tagger liuyanjie &lt;x@gmail.com&gt; 1527559851 +0800</span><br><span class="line"></span><br><span class="line">v0.0.2</span><br><span class="line"></span><br><span class="line">$ git cat-file -p 5a68</span><br><span class="line">tree 42564bab966d59e3501a1903c1cb2066adc2bd2d</span><br><span class="line">parent cc52745b13b00c672c7ac9b1dc42336953293b7a</span><br><span class="line">parent fd885cfcd548a24fabb2f5b49ea60beadc8c5912</span><br><span class="line">author liuyanjie &lt;x@gmail.com&gt; 1527559277 +0800</span><br><span class="line">committer liuyanjie &lt;x@gmail.com&gt; 1527559277 +0800</span><br><span class="line"></span><br><span class="line">Merge branch <span class="string">&#x27;feature-a&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br></pre></td><td class="code"><pre><span class="line">$ tree .git</span><br><span class="line">.git</span><br><span class="line">├── COMMIT_EDITMSG</span><br><span class="line">├── HEAD</span><br><span class="line">├── ORIG_HEAD</span><br><span class="line">├── co.gitup.mac</span><br><span class="line">│   ├── cache.db</span><br><span class="line">│   ├── info.plist</span><br><span class="line">│   └── snapshots.data</span><br><span class="line">├── config</span><br><span class="line">├── description</span><br><span class="line">├── hooks</span><br><span class="line">│   ├── applypatch-msg.sample</span><br><span class="line">│   ├── commit-msg.sample</span><br><span class="line">│   ├── fsmonitor-watchman.sample</span><br><span class="line">│   ├── post-update.sample</span><br><span class="line">│   ├── pre-applypatch.sample</span><br><span class="line">│   ├── pre-commit.sample</span><br><span class="line">│   ├── pre-push.sample</span><br><span class="line">│   ├── pre-rebase.sample</span><br><span class="line">│   ├── pre-receive.sample</span><br><span class="line">│   ├── prepare-commit-msg.sample</span><br><span class="line">│   └── update.sample</span><br><span class="line">├── index</span><br><span class="line">├── info</span><br><span class="line">│   └── exclude</span><br><span class="line">├── logs</span><br><span class="line">│   ├── HEAD</span><br><span class="line">│   └── refs</span><br><span class="line">│       └── heads</span><br><span class="line">│           └── master</span><br><span class="line">├── objects</span><br><span class="line">│   ├── 03</span><br><span class="line">│   │   └── 3fa1ab71f0d54f348f07a3a0ffcefd52804df5</span><br><span class="line">│   ├── 17</span><br><span class="line">│   │   └── 4c530154ab3b4d4d322bcbd66cdde18882eb00</span><br><span class="line">│   ├── 28</span><br><span class="line">│   │   └── baf4f77fb49abf99c18bc1c12363d898f3ced7</span><br><span class="line">│   ├── 2b</span><br><span class="line">│   │   └── 9fc8524bac21d5d5c2f988b5793315ce93abc6</span><br><span class="line">│   ├── 2c</span><br><span class="line">│   │   └── affd90cd736e58f516e3988e3af84f5fa42b4f</span><br><span class="line">│   ├── 2f</span><br><span class="line">│   │   └── b9045bb558889ea2bd8cc5d8fe45e7247706da</span><br><span class="line">│   ├── 30</span><br><span class="line">│   │   └── be8054b61a4a124e4cd8a1201de8474cb45e12</span><br><span class="line">│   ├── 39</span><br><span class="line">│   │   └── a204af28de9b4f0411735e597e0da7416ca35a</span><br><span class="line">│   ├── 42</span><br><span class="line">│   │   └── 564bab966d59e3501a1903c1cb2066adc2bd2d</span><br><span class="line">│   ├── 44</span><br><span class="line">│   │   └── 2b821b9b4acb5b0e632042542b3b29e2cf721e</span><br><span class="line">│   ├── 48</span><br><span class="line">│   │   └── 1cab7467cdb697bf7affdba0f2a5673a03366d</span><br><span class="line">│   ├── 5a</span><br><span class="line">│   │   └── 68c7402c30ae44fd82dadba2d8f148efb75541</span><br><span class="line">│   ├── 5e</span><br><span class="line">│   │   └── e275ce022007c38d187c58aef13f8d9e04b553</span><br><span class="line">│   ├── 74</span><br><span class="line">│   │   └── ce19245be785772b33e1193df0d2c6a940ed10</span><br><span class="line">│   ├── 82</span><br><span class="line">│   │   └── e47e13f87031cab7c47b455744bc4ed3fdba3c</span><br><span class="line">│   ├── 96</span><br><span class="line">│   │   └── 09811e44367d44f2915435f4454716e1e535fd</span><br><span class="line">│   ├── 9d</span><br><span class="line">│   │   └── 23f8ad2ecc9f8e49d78174bcc6e4668ca7f031</span><br><span class="line">│   ├── a0</span><br><span class="line">│   │   └── cf709bc0991b5340080f944d02894dc1596d46</span><br><span class="line">│   ├── b9</span><br><span class="line">│   │   └── 8c36254dba6e169429c2be57b1bbeccb6e1f28</span><br><span class="line">│   ├── c1</span><br><span class="line">│   │   └── 067ba0a7ba51f937518c9bc051ea744ca748fe</span><br><span class="line">│   ├── c6</span><br><span class="line">│   │   └── b9e95b39b8cd8ead8bbf4b118104741017de1b</span><br><span class="line">│   ├── cc</span><br><span class="line">│   │   ├── 52745b13b00c672c7ac9b1dc42336953293b7a</span><br><span class="line">│   │   └── f88a6f1649213499841c33f9bb36d1d8756fb7</span><br><span class="line">│   ├── f3</span><br><span class="line">│   │   └── 954314c1026028e77ea3a765aadefa67b45195</span><br><span class="line">│   ├── fd</span><br><span class="line">│   │   └── 885cfcd548a24fabb2f5b49ea60beadc8c5912</span><br><span class="line">│   ├── info</span><br><span class="line">│   └── pack</span><br><span class="line">└── refs</span><br><span class="line">    ├── heads</span><br><span class="line">    │   └── master</span><br><span class="line">    └── tags</span><br><span class="line">        ├── v0.0.1</span><br><span class="line">        └── v0.0.2</span><br><span class="line"></span><br><span class="line">36 directories, 51 files</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p><a target="_blank" rel="noopener" href="https://stackoverflow.com/questions/964876/head-and-orig-head-in-git">https://stackoverflow.com/questions/964876/head-and-orig-head-in-git</a></p>
+<p>.git&#x2F;HEAD 指明了当前活跃分支是哪个分支</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> .git/HEAD</span><br><span class="line">ref: refs/heads/master</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p><a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/tree/master/vcs/git/images/git-obj-model.svg">svg版</a></p>
+<p><img data-src="/../../../images/vcs/git/images/git-obj-model.png" alt="git-obj-model"></p>
+<hr>
+<p><a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/tree/master/vcs/git/git-object-model.md" >查看源文件</a>&nbsp;&nbsp;<a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/edit/master/vcs/git/git-object-model.md">编辑源文件</a></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>liuyanjie
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://blog.butonly.com/posts/vcs/git/git-object-model/" title="Git对象模型：一步一步分析Git底层对象模型">https://blog.butonly.com/posts/vcs/git/git-object-model/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/vcs/" rel="tag"># vcs</a>
+              <a href="/tags/git/" rel="tag"># git</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/posts/node.js/libuv/8-libuv-threadpool/" rel="prev" title="libuv源码分析（八）线程池（Threadpool）">
+                  <i class="fa fa-angle-left"></i> libuv源码分析（八）线程池（Threadpool）
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/posts/vcs/git/git-working-mechanism/" rel="next" title="Git命令工作机制">
+                  Git命令工作机制 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    
+  <div class="comments" id="disqus_thread">
+    <noscript>Please enable JavaScript to view the comments powered by Disqus.</noscript>
+  </div>
+  
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2018 – 
+    <span itemprop="copyrightYear">2025</span>
+    <span class="with-love">
+      <i class="heartbeat"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">liuyanjie</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">166k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:31</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+  <a href="https://github.com/c-cc-cc" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+<script class="next-config" data-name="disqus" type="application/json">{"enable":true,"shortname":"liuyanjie","count":true,"lazyload":true,"i18n":{"disqus":"disqus"}}</script>
+<script src="/js/third-party/comments/disqus.js" defer></script>
+
+</body>
+</html>

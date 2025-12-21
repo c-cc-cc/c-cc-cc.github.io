@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)"><meta name="generator" content="Hexo 8.1.1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png">
+  <link rel="mask-icon" href="/favicon.png" color="#222">
+  <link rel="manifest" href="/manifest.json">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.css" integrity="sha256-gkQVf8UKZgQ0HyuxL/VnacadJ+D2Kox2TCEBuNQg5+w=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"blog.butonly.com","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.26.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"tomorrow-night-bright"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":true,"pangu":true,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"algolia":{"appID":"FRAAR0AUP0","apiKey":"459ace1d7f5aabfa15b4f89baba340b3","indexName":"blog.butonly.com","hits":{"per_page":10}}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Handle 是 libuv 设计实现的核心部分之一，根据官方描述：Handles 代表长生命周期的对象有能力执行某些操作当它们处于激活状态下。 libuv 采用了组合的方式实现代码复用，并且达到了面向对象编程中的继承的效果。 Handle 有很多种不同的类型，这些类型有一个共同的、公共的基础结构 uv_handle_s，因结构体内存布局字节对齐所有子类型都可以强制类型转换成 uv_handle_">
+<meta property="og:type" content="article">
+<meta property="og:title" content="libuv源码分析（三）资源抽象：Handle 和 Request">
+<meta property="og:url" content="https://blog.butonly.com/posts/node.js/libuv/3-libuv-handle-and-request/index.html">
+<meta property="og:site_name" content="liuyanjie&#39;s blog">
+<meta property="og:description" content="Handle 是 libuv 设计实现的核心部分之一，根据官方描述：Handles 代表长生命周期的对象有能力执行某些操作当它们处于激活状态下。 libuv 采用了组合的方式实现代码复用，并且达到了面向对象编程中的继承的效果。 Handle 有很多种不同的类型，这些类型有一个共同的、公共的基础结构 uv_handle_s，因结构体内存布局字节对齐所有子类型都可以强制类型转换成 uv_handle_">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2019-04-23T07:00:03.000Z">
+<meta property="article:modified_time" content="2021-05-08T08:18:19.517Z">
+<meta property="article:author" content="liuyanjie">
+<meta property="article:tag" content="eventloop">
+<meta property="article:tag" content="libuv">
+<meta property="article:tag" content="node.js">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://blog.butonly.com/posts/node.js/libuv/3-libuv-handle-and-request/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://blog.butonly.com/posts/node.js/libuv/3-libuv-handle-and-request/","path":"posts/node.js/libuv/3-libuv-handle-and-request/","title":"libuv源码分析（三）资源抽象：Handle 和 Request"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>libuv源码分析（三）资源抽象：Handle 和 Request | liuyanjie's blog</title>
+  
+    <script async src="https://www.googletagmanager.com/gtag/js?id=014348069229275019795:-z92dm0sjiy"></script>
+  <script class="next-config" data-name="google_analytics" type="application/json">{"tracking_id":"014348069229275019795:-z92dm0sjiy","only_pageview":false,"measure_protocol_api_secret":null}</script>
+  <script src="/js/third-party/analytics/google-analytics.js" defer></script>
+
+  <script src="/js/third-party/analytics/baidu-analytics.js" defer></script>
+  <script async src="https://hm.baidu.com/hm.js?4cd57e104d0d9f5862dd91d0acdb9eee"></script>
+
+
+
+
+
+
+
+  
+  <script size="300" alpha="0.6" zIndex="-1" src="https://cdn.jsdelivr.net/npm/ribbon.js@1.0.2/dist/ribbon.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.umd.js" integrity="sha256-a+H7FYzJv6oU2hfsfDGM2Ohw/cR9v+hPfxHCLdmCrE8=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/lozad@1.16.0/dist/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/pangu@7.2.0/dist/browser/pangu.umd.js" integrity="sha256-JnmRRnJK7DC6RQJbAJb6AXOM9OmWzS6z8eYultk/48Y=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script><script src="/js/bookmark.js" defer></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/algoliasearch@5.36.0/dist/lite/builds/browser.umd.js" integrity="sha256-o49zoHLDPBm9WLg6AiliAVi3axCRTqe3ltTxLvhzAVg=" crossorigin="anonymous" defer></script><script src="/js/third-party/search/algolia-search.js" defer></script>
+
+  <script class="next-config" data-name="pdf" type="application/json">{"object_url":{"url":"https://cdn.jsdelivr.net/npm/pdfobject@2.3.1/pdfobject.min.js","integrity":"sha256-jI72I8ZLVflVOisZIOaLvRew3tyvzeu6aZXFm7P7dEo="},"url":"/lib/pdf/web/viewer.html"}</script>
+  <script src="/js/third-party/tags/pdf.js" defer></script>
+
+  <script class="next-config" data-name="mermaid" type="application/json">{"enable":true,"theme":"forest","js":{"url":"https://cdn.jsdelivr.net/npm/mermaid@11.10.1/dist/mermaid.min.js","integrity":"sha256-BmQmdWDS8X2OTbrwELWK366LV6escyWhHHe0XCTU/Hk="}}</script>
+  <script src="/js/third-party/tags/mermaid.js" defer></script>
+
+
+  <script src="/js/third-party/fancybox.js" defer></script>
+
+
+
+  
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+<link rel="alternate" href="/atom.xml" title="liuyanjie's blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">liuyanjie's blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <img class="custom-logo-image" src="/logo.png" alt="liuyanjie's blog">
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="home fa-fw"></i>首页</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">6</span></a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+      <div class="search-header">
+        <span class="search-icon">
+          <i class="fa fa-search"></i>
+        </span>
+        <div class="search-input-container">
+          <input autocomplete="off" autocapitalize="off" maxlength="80"
+                placeholder="搜索..." spellcheck="false"
+                type="search" class="search-input">
+        </div>
+        <span class="popup-btn-close" role="button">
+          <i class="fa fa-times-circle"></i>
+        </span>
+      </div>
+      <div class="search-result-container">
+        <div class="search-result-icon">
+          <i class="fab fa-algolia fa-5x"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Init%EF%BC%9Auv-handle-init"><span class="nav-number">1.</span> <span class="nav-text">Init：uv__handle_init</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Start%EF%BC%9Auv-handle-start"><span class="nav-number">2.</span> <span class="nav-text">Start：uv__handle_start</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Stop%EF%BC%9Auv-handle-stop"><span class="nav-number">3.</span> <span class="nav-text">Stop：uv__handle_stop</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Close%EF%BC%9Auv-close"><span class="nav-number">4.</span> <span class="nav-text">Close：uv_close</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reference-counting%EF%BC%9ARef-Unref"><span class="nav-number">5.</span> <span class="nav-text">Reference counting：Ref &amp; Unref</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Status%EF%BC%9AActive-Closing"><span class="nav-number">6.</span> <span class="nav-text">Status：Active &amp; Closing</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#handle-%E5%92%8C-loop-%E7%9A%84%E5%85%B3%E8%81%94%E5%85%B3%E7%B3%BB"><span class="nav-number">7.</span> <span class="nav-text">handle 和 loop 的关联关系</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#uv-idle-t-uv-check-t-uv-check-t"><span class="nav-number">7.1.</span> <span class="nav-text">uv_idle_t uv_check_t uv_check_t</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#uv-async-t"><span class="nav-number">7.2.</span> <span class="nav-text">uv_async_t</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#uv-process-t"><span class="nav-number">7.3.</span> <span class="nav-text">uv_process_t</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#uv-timer-t"><span class="nav-number">7.4.</span> <span class="nav-text">uv_timer_t</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#uv-io-t"><span class="nav-number">7.5.</span> <span class="nav-text">uv__io_t</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#uv-work"><span class="nav-number">7.6.</span> <span class="nav-text">uv__work</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#closing-handles"><span class="nav-number">7.7.</span> <span class="nav-text">closing_handles</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Request"><span class="nav-number">8.</span> <span class="nav-text">Request</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="liuyanjie"
+      src="/avatar.png">
+  <p class="site-author-name" itemprop="name">liuyanjie</p>
+  <div class="site-description" itemprop="description">KISS DRY</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">13</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/liuyanjie" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;liuyanjie" rel="noopener me" target="_blank"><i class="github fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="/liuyj619@gmail.com" title="E-Mail → liuyj619@gmail.com" rel="noopener me"><i class="envelope fa-fw"></i></a>
+      </span>
+  </div>
+  <div class="cc-license animated" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="https://cdn.jsdelivr.net/npm/@creativecommons/vocabulary@2020.11.3/assets/license_badges/small/by_nc_sa.svg" alt="Creative Commons"></a>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://blog.butonly.com/posts/node.js/libuv/3-libuv-handle-and-request/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/avatar.png">
+      <meta itemprop="name" content="liuyanjie">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liuyanjie's blog">
+      <meta itemprop="description" content="KISS DRY">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="libuv源码分析（三）资源抽象：Handle 和 Request | liuyanjie's blog">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          libuv源码分析（三）资源抽象：Handle 和 Request
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2019-04-23 15:00:03" itemprop="dateCreated datePublished" datetime="2019-04-23T15:00:03+08:00">2019-04-23</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2021-05-08 16:18:19" itemprop="dateModified" datetime="2021-05-08T16:18:19+08:00">2021-05-08</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" itemprop="url" rel="index"><span itemprop="name">源码分析</span></a>
+        </span>
+    </span>
+
+  
+  
+  <span class="post-meta-item">
+    
+      <span class="post-meta-item-icon">
+        <i class="far fa-comment"></i>
+      </span>
+      <span class="post-meta-item-text">Disqus：</span>
+    
+    <a title="disqus" href="/posts/node.js/libuv/3-libuv-handle-and-request/#disqus_thread" itemprop="discussionUrl">
+      <span class="post-comments-count disqus-comment-count" data-disqus-identifier="posts/node.js/libuv/3-libuv-handle-and-request/" itemprop="commentCount"></span>
+    </a>
+  </span>
+  
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>18k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>16 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>Handle 是 libuv 设计实现的核心部分之一，根据官方描述：<strong>Handles 代表长生命周期的对象有能力执行某些操作当它们处于激活状态下</strong>。</p>
+<p>libuv 采用了<strong>组合的方式</strong>实现代码复用，并且达到了面向对象编程中的继承的效果。</p>
+<p>Handle 有很多种不同的类型，这些类型有一个共同的、公共的基础结构 <code>uv_handle_s</code>，因结构体内存布局字节对齐所有子类型都可以强制类型转换成 <code>uv_handle_t</code> 类型，所以所有能够应用在 <code>uv_handle_t</code> 上的基础API都可用于子类型的 <code>handle</code>。</p>
+<p>在开始对不同类型的 Handle 开始分析之前，将会对 Handle 进行整体分析。</p>
+<p>首先，看一下 libuv 中的 Handle 相关的类型声明和定义：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/include/uv.h#L201">https://github.com/libuv/libuv/blob/v1.28.0/include/uv.h#L201</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Handle types. */</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_loop_s</span> <span class="title">uv_loop_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_handle_s</span> <span class="title">uv_handle_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_stream_s</span> <span class="title">uv_stream_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_tcp_s</span> <span class="title">uv_tcp_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_udp_s</span> <span class="title">uv_udp_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_pipe_s</span> <span class="title">uv_pipe_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_tty_s</span> <span class="title">uv_tty_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_poll_s</span> <span class="title">uv_poll_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_timer_s</span> <span class="title">uv_timer_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_prepare_s</span> <span class="title">uv_prepare_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_check_s</span> <span class="title">uv_check_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_idle_s</span> <span class="title">uv_idle_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_async_s</span> <span class="title">uv_async_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_process_s</span> <span class="title">uv_process_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_fs_event_s</span> <span class="title">uv_fs_event_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_fs_poll_s</span> <span class="title">uv_fs_poll_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_signal_s</span> <span class="title">uv_signal_t</span>;</span></span><br></pre></td></tr></table></figure>
+
+<p>以上是 libuv 中所有的 <code>handle</code> 声明，并且都起了类型别名，命名规律显而易见，<code>uv_loop_t</code> 也在其中，<code>uv_loop_t</code> 作为所有资源的统一入口同样也是一种资源，而且是生命周期最长的资源。</p>
+<p>下面来开一下 <code>uv_handle_s</code> 的结构定义：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/include/uv.h#L411">https://github.com/libuv/libuv/blob/v1.28.0/include/uv.h#L411</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_HANDLE_FIELDS     \</span></span><br><span class="line"><span class="meta">  <span class="comment">/* public */</span>               \ 公有字段：</span></span><br><span class="line">  <span class="type">void</span>* data;                \    数据指针，指向实际的数据，可用于指向任意用户自定义数据地址</span><br><span class="line">  <span class="comment">/* read-only */</span>            \ 只读字段：</span><br><span class="line">  <span class="type">uv_loop_t</span>* loop;           \    事件循环对象指针，指向事件循环对象</span><br><span class="line">  uv_handle_type type;       \    类型</span><br><span class="line">  <span class="comment">/* private */</span>              \ 私有字段：</span><br><span class="line">  uv_close_cb close_cb;      \    关闭回调，Handle关闭时触发的回调函数</span><br><span class="line">  <span class="type">void</span>* handle_queue[<span class="number">2</span>];     \    队列节点，用于链接前后节点，形成双向队列，该字段是含有两个成员的数组，分别表示next、prev。</span><br><span class="line">  <span class="class"><span class="keyword">union</span> &#123;</span>                    \    联合体字段，TODO：待补充作用</span><br><span class="line">    <span class="type">int</span> fd;                  \</span><br><span class="line">    <span class="type">void</span>* reserved[<span class="number">4</span>];       \</span><br><span class="line">  &#125; u;                       \</span><br><span class="line">  UV_HANDLE_PRIVATE_FIELDS   \  平台相关字段，libuv在各个不同平台上的实现是不同的，为支持不同平台，需针对不同平台进行差异化实现。</span><br></pre></td></tr></table></figure>
+
+<p>宏 <code>UV_HANDLE_FIELDS</code> 被放到了 <code>struct uv_handle_s</code>：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/view-v1.28.0/include/uv.h#L426">https://github.com/libuv/libuv/blob/view-v1.28.0/include/uv.h#L426</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* The abstract base class of all handles. */</span></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">uv_handle_s</span> &#123;</span></span><br><span class="line">  UV_HANDLE_FIELDS</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>如注释所言，<code>struct uv_handle_s</code> 是所有 <code>handle</code> 的抽象基类。</p>
+<p>在 <code>*nix</code> 平台下，<code>UV_HANDLE_PRIVATE_FIELDS</code> 宏定义如下：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.x/src/uv-common.h#L62">https://github.com/libuv/libuv/blob/v1.x/src/uv-common.h#L62</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_HANDLE_PRIVATE_FIELDS     \</span></span><br><span class="line"><span class="meta">  uv_handle_t* next_closing;         \ 下一个 处于 closing 状态的 handle 的地址，形成一个单向的链表</span></span><br><span class="line">  <span class="type">unsigned</span> <span class="type">int</span> flags;                \ handle 的 标识，handle 存在很多标识，通过位运算获取。</span><br></pre></td></tr></table></figure>
+
+<p><code>flags</code> 可以使用的标识如下：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Handle flags. Some flags are specific to Windows or UNIX. */</span></span><br><span class="line"><span class="class"><span class="keyword">enum</span> &#123;</span></span><br><span class="line">  <span class="comment">/* Used by all handles. */</span></span><br><span class="line">  UV_HANDLE_CLOSING                     = <span class="number">0x00000001</span>,</span><br><span class="line">  UV_HANDLE_CLOSED                      = <span class="number">0x00000002</span>,</span><br><span class="line">  UV_HANDLE_ACTIVE                      = <span class="number">0x00000004</span>,</span><br><span class="line">  UV_HANDLE_REF                         = <span class="number">0x00000008</span>,</span><br><span class="line">  UV_HANDLE_INTERNAL                    = <span class="number">0x00000010</span>,</span><br><span class="line">  UV_HANDLE_ENDGAME_QUEUED              = <span class="number">0x00000020</span>,</span><br><span class="line"></span><br><span class="line">  <span class="comment">/* Used by streams. */</span></span><br><span class="line">  UV_HANDLE_LISTENING                   = <span class="number">0x00000040</span>,</span><br><span class="line">  UV_HANDLE_CONNECTION                  = <span class="number">0x00000080</span>,</span><br><span class="line">  UV_HANDLE_SHUTTING                    = <span class="number">0x00000100</span>,</span><br><span class="line">  UV_HANDLE_SHUT                        = <span class="number">0x00000200</span>,</span><br><span class="line">  UV_HANDLE_READ_PARTIAL                = <span class="number">0x00000400</span>,</span><br><span class="line">  UV_HANDLE_READ_EOF                    = <span class="number">0x00000800</span>,</span><br><span class="line"></span><br><span class="line">  <span class="comment">// ... 其他标识省略标识</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>所有 <code>handle</code> 都具备 <code>UV_HANDLE_ACTIVE</code> <code>UV_HANDLE_CLOSED</code> 等几个公共状态，还有一些特地 <code>handle</code> 特定的状态。</p>
+<p>以上为 <code>uv_handle_s</code> 定义，其中字段是通过 <code>UV_HANDLE_FIELDS</code> 宏定义和引入的，这样做的目的是为了复用字段定义部分的代码，能有效降低代码量，提升可维护性。相关字段的功能描述见字段后的说明。</p>
+<p><code>uv_handle_t</code> 实际上就是作为所有其他 <code>handle</code> 的<code>基类</code>存在的，其他 <code>handle</code> 通过<code>组合</code>的方式集成了 <code>uv_handle_t</code> 字段，通过强制类型转换，可以转换为 <code>uv_handle_t</code>，之后在其上应用 <code>uv_handle_t</code> 的相关方法。</p>
+<p>以 <code>stream</code> 为例看一下其类型定义：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.x/include/uv.h#L461">https://github.com/libuv/libuv/blob/v1.x/include/uv.h#L461</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_STREAM_FIELDS                        \</span></span><br><span class="line"><span class="meta">  <span class="comment">/* number of bytes queued for writing */</span>      \</span></span><br><span class="line"><span class="meta">  size_t write_queue_size;                      \</span></span><br><span class="line"><span class="meta">  uv_alloc_cb alloc_cb;                         \</span></span><br><span class="line"><span class="meta">  uv_read_cb read_cb;                           \</span></span><br><span class="line"><span class="meta">  <span class="comment">/* private */</span>                                 \</span></span><br><span class="line"><span class="meta">  UV_STREAM_PRIVATE_FIELDS</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> * uv_stream_t is a subclass of uv_handle_t.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * uv_stream is an abstract class.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * uv_stream_t is the parent class of uv_tcp_t, uv_pipe_t and uv_tty_t.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">uv_stream_s</span> &#123;</span></span><br><span class="line">  UV_HANDLE_FIELDS</span><br><span class="line">  UV_STREAM_FIELDS</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>在 <code>uv_stream_s</code> 结构体中，包含了 <code>uv_handle_s</code> 的宏定义 <code>UV_HANDLE_FIELDS</code> 和 <code>uv_stream_s</code> 类型特定宏定义 <code>UV_STREAM_FIELDS</code>，<code>uv_stream_s</code> 和 <code>uv_handle_s</code> 在结构体内存布局上存在公共的部分且是以起始地址对齐的，<code>uv_stream_s</code> 比 <code>uv_handle_s</code> 多出一块特有的部分, 可以通过强制类型转换将 <code>uv_stream_s</code> 转换为 <code>uv_handle_s</code>。</p>
+<p><code>uv_handle_t</code> 定义了所有 <code>handle</code> 公共的部分，作为一个抽象基类存在。<code>uv_handle_t</code> 是不直接使用的，因为它并不能支持用户需求，无实际意义，实际上，在使用其他派生类型时，会间接使用 <code>uv_handle_t</code>。所有派生类型在初始化的时候，也进行了 <code>uv_handle_t</code> 的初始化，这类似于高级语言构造函数在执行时常常需要调用基类构造函数一样。除初始化操作以外，同样还有其他操作需要调用 <code>uv_handle_t</code> 函数的相关操作。</p>
+<p>一般来说，派生类型具备如下几个操作：</p>
+<ul>
+<li><code>uv_{handle}_init</code>：初始化 <code>handle</code> 结构，把各个字段设置成合理值，并插入 <code>loop-&gt;handle_queue</code> 队列；</li>
+<li><code>uv_{handle}_start</code>：启动 <code>handle</code> 使其处于 <code>UV_HANDLE_ACTIVE</code> 状态；</li>
+<li><code>uv_{handle}_stop</code>：停止 <code>handle</code> 使其处于 <code>UV_HANDLE_CLOSED</code> 状态，并移出 <code>loop-&gt;handle_queue</code> 队列。</li>
+</ul>
+<p>以上各派生类型的公共操作，体现了 <code>handle</code> 的生命周期，和 <code>loop</code> 生命周期类似，除此之外还包括一些特定 <code>handle</code> 特定处理逻辑。</p>
+<p>因为各个派生类型的<code>初始化/启动/停止</code>逻辑都不相同，所以并没有公共的<code>初始化/启动/停止</code>方法，每个派生类型根据需要实现类型特定的<code>初始化/启动/停止</code>函数，同时它们还需要在内部调用基类的方法进行对象 <code>初始化/启动/停止</code> <code>uv_handle_t</code>，对应的方法为：</p>
+<ul>
+<li><code>uv__handle_init</code></li>
+<li><code>uv__handle_start</code></li>
+<li><code>uv__handle_stop</code></li>
+</ul>
+<p>从命名可以看出这些都是不对外暴露的方法。</p>
+<p>接下来我就来看一下 <code>handle</code> 的初始化。</p>
+<h2 id="Init：uv-handle-init"><a href="#Init：uv-handle-init" class="headerlink" title="Init：uv__handle_init"></a>Init：<code>uv__handle_init</code></h2><p><code>uv_handle_t</code> 的初始化代码是用宏 <code>uv__handle_init</code> 定义的宏函数，采用宏可实现内联 <code>inline</code> 函数的效果，实现如下：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L282">https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L282</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> uv__handle_init(loop_, h, type_)                                      \</span></span><br><span class="line"><span class="meta">  do &#123;                                                                        \</span></span><br><span class="line"><span class="meta">    (h)-&gt;loop = (loop_);                                                      \</span></span><br><span class="line"><span class="meta">    (h)-&gt;type = (type_);                                                      \</span></span><br><span class="line"><span class="meta">    (h)-&gt;flags = UV_HANDLE_REF;  <span class="comment">/* Ref the loop when active. */</span>              \</span></span><br><span class="line"><span class="meta">    QUEUE_INSERT_TAIL(&amp;(loop_)-&gt;handle_queue, &amp;(h)-&gt;handle_queue);            \</span></span><br><span class="line"><span class="meta">    uv__handle_platform_init(h);                                              \</span></span><br><span class="line"><span class="meta">  &#125;                                                                           \</span></span><br><span class="line"><span class="meta">  while (0)</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">if</span> defined(_WIN32)</span></span><br><span class="line"><span class="meta"># <span class="keyword">define</span> uv__handle_platform_init(h) ((h)-&gt;u.fd = -1)</span></span><br><span class="line"><span class="meta">#<span class="keyword">else</span></span></span><br><span class="line"><span class="meta"># <span class="keyword">define</span> uv__handle_platform_init(h) ((h)-&gt;next_closing = NULL)</span></span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br></pre></td></tr></table></figure>
+
+<p><code>uv__handle_init</code> 是一个使用宏定义的宏函数，<code>do{}while(0)</code> 是一种巧妙用法，形成代码块，且调用时后边必须加分号，会被编译器优化掉。</p>
+<p>这段代码主要完成以下几个工作：</p>
+<ol>
+<li>关联 <code>loop</code> 到 <code>handle</code>，可以通过 <code>handle</code> 找到对应的 <code>loop</code>；</li>
+<li>设置 <code>handle</code> 类型；</li>
+<li>设置 <code>handle</code> 标识为 <code>UV_HANDLE_REF</code>，这个标识位决定了 <code>handle</code> 是否计入引用计数。后续 Start Stop 会看到其用途；</li>
+<li>将 <code>handle</code> 插入 <code>loop-&gt;handle_queue</code> 队列的尾部，所有初始化的 <code>handle</code> 就将被插入到这个队列中；</li>
+<li>通过 <code>uv__handle_platform_init</code> 平台特定初始化函数将 <code>handle</code> 的 <code>next_closing</code> 设置为 <code>NULL</code>，这是一个连接了所有关闭的 <code>handle</code> 的单链表。</li>
+</ol>
+<p>如下是 <code>uv_timer_t</code> 的初始化函数 <code>uv_timer_init</code>，它直接引用了 <code>uv__handle_init</code> 初始化 <code>uv_handle_t</code>，其他派生类型也是如此。</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/timer.c#L62">https://github.com/libuv/libuv/blob/v1.28.0/src/timer.c#L62</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_timer_init</span><span class="params">(<span class="type">uv_loop_t</span>* loop, <span class="type">uv_timer_t</span>* handle)</span> &#123;</span><br><span class="line">  uv__handle_init(loop, (<span class="type">uv_handle_t</span>*)handle, UV_TIMER);</span><br><span class="line">  handle-&gt;timer_cb = <span class="literal">NULL</span>;</span><br><span class="line">  handle-&gt;repeat = <span class="number">0</span>;</span><br><span class="line">  <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这样初始化工作就完成了，各个派生结构特定的初始化部分可能很简单，也可能很复杂。</p>
+<h2 id="Start：uv-handle-start"><a href="#Start：uv-handle-start" class="headerlink" title="Start：uv__handle_start"></a>Start：<code>uv__handle_start</code></h2><p><code>uv_handle_t</code> 的启动代码是用宏 <code>uv__handle_start</code> 定义的宏函数，实现如下：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L239">https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L239</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> uv__handle_start(h)                                                   \</span></span><br><span class="line"><span class="meta">  do &#123;                                                                        \</span></span><br><span class="line"><span class="meta">    <span class="keyword">if</span> (((h)-&gt;flags &amp; UV_HANDLE_ACTIVE) != 0) break;                          \</span></span><br><span class="line"><span class="meta">    (h)-&gt;flags |= UV_HANDLE_ACTIVE;                                           \</span></span><br><span class="line"><span class="meta">    <span class="keyword">if</span> (((h)-&gt;flags &amp; UV_HANDLE_REF) != 0) uv__active_handle_add(h);          \</span></span><br><span class="line"><span class="meta">  &#125;                                                                           \</span></span><br><span class="line"><span class="meta">  while (0)</span></span><br></pre></td></tr></table></figure>
+
+<p><code>uv__handle_start</code> 将 handle 设置为 <code>UV_HANDLE_ACTIVE</code> 状态，并通过 <code>uv__active_handle_add</code> 更新活动的 <code>handle</code> 引用计数。如果不存在 <code>UV_HANDLE_REF</code> 标志位，则不会增加引用计数。</p>
+<p>虽然对 handle 进行了 <code>Start</code> 操作，但是实际仅仅是设置了个标志位和增加了一个引用计数而已，看不到任何的 <code>Start</code>，实际上是告诉 libuv 该 <code>handle</code> 准备好了，可以 <code>Go</code> 了。因为更新引用计数间接影响了事件循环的活动状态。</p>
+<p><code>uv_run</code> 才是真正的启动操作，向 libuv 表明 <code>Ready</code> 了之后，<code>uv_run</code> 的时候才会处理这个 <code>handle</code>。</p>
+<h2 id="Stop：uv-handle-stop"><a href="#Stop：uv-handle-stop" class="headerlink" title="Stop：uv__handle_stop"></a>Stop：<code>uv__handle_stop</code></h2><p>handle 的 Stop： 操作 由 <code>uv__handle_stop</code> 宏实现：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> uv__handle_stop(h)                                                    \</span></span><br><span class="line"><span class="meta">  do &#123;                                                                        \</span></span><br><span class="line"><span class="meta">    <span class="keyword">if</span> (((h)-&gt;flags &amp; UV_HANDLE_ACTIVE) == 0) break;                          \</span></span><br><span class="line"><span class="meta">    (h)-&gt;flags &amp;= ~UV_HANDLE_ACTIVE;                                          \</span></span><br><span class="line"><span class="meta">    <span class="keyword">if</span> (((h)-&gt;flags &amp; UV_HANDLE_REF) != 0) uv__active_handle_rm(h);           \</span></span><br><span class="line"><span class="meta">  &#125;                                                                           \</span></span><br><span class="line"><span class="meta">  while (0)</span></span><br></pre></td></tr></table></figure>
+
+<p><code>uv__handle_stop</code> 将 handle 设置为 <code>~UV_HANDLE_ACTIVE</code> 状态，并通过 <code>uv__active_handle_rm</code> 更新活动的 <code>handle</code> 引用计数。如果不存在 <code>UV_HANDLE_REF</code> 标志位，则不会减少引用计数。</p>
+<p><code>Stop</code> 是 <code>Start</code> 的反向操作，将 handle 修改为<code>非准备</code>状态。</p>
+<h2 id="Close：uv-close"><a href="#Close：uv-close" class="headerlink" title="Close：uv_close"></a>Close：<code>uv_close</code></h2><p>对于 handle 来说，还有一个 Close 方法 <code>uv_close</code>，<code>Close</code> 可以认为是 <code>Init</code> 的反向操作，它将 <code>handle</code> 从 <code>loop-&gt;handle_queue</code> 移除，清理资源并触发回调。</p>
+<p>不同于上面三个方法，<code>uv_close</code> 是对外开放的，适用于所有类型 <code>handle</code> 的方法，在 <code>uv_close</code> 内部根据不同的类型，调用对应的函数处理。</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L107">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L107</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">uv_close</span><span class="params">(<span class="type">uv_handle_t</span>* handle, uv_close_cb close_cb)</span> &#123;</span><br><span class="line">  assert(!uv__is_closing(handle));</span><br><span class="line"></span><br><span class="line">  handle-&gt;flags |= UV_HANDLE_CLOSING;</span><br><span class="line">  handle-&gt;close_cb = close_cb;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">switch</span> (handle-&gt;type) &#123;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  uv__make_close_pending(handle);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L209">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L209</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">uv__make_close_pending</span><span class="params">(<span class="type">uv_handle_t</span>* handle)</span> &#123;</span><br><span class="line">  assert(handle-&gt;flags &amp; UV_HANDLE_CLOSING);</span><br><span class="line">  assert(!(handle-&gt;flags &amp; UV_HANDLE_CLOSED));</span><br><span class="line">  handle-&gt;next_closing = handle-&gt;loop-&gt;closing_handles;</span><br><span class="line">  handle-&gt;loop-&gt;closing_handles = handle;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>在 <code>loop</code> 上有一个 <code>closing_handles</code> 字段，这是一个单向链表，关联了处于关闭进行中的 handle，这个字段的类型是 <code>uv_handle_t*</code>，指向了 <code>uv_handle_t</code>，而 <code>uv_handle_s</code> 存在了一个 <code>uv_handle_t*</code> 类型的指针 <code>next_closing</code> 指向下一个 <code>handle</code>, 这样就形成一个单向链表。 </p>
+<p>如下 <code>closing_handles</code> 的声明和初始化：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_LOOP_PRIVATE_FIELDS                                                \</span></span><br><span class="line"><span class="meta">  uv_handle_t* closing_handles;                                               \</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_HANDLE_PRIVATE_FIELDS                                              \</span></span><br><span class="line"><span class="meta">  uv_handle_t* next_closing;                                                  \</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_loop_init</span><span class="params">(<span class="type">uv_loop_t</span>* loop)</span> &#123;</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">  loop-&gt;closing_handles = <span class="literal">NULL</span>;</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>uv_close</code> 通过调用 <code>uv__make_close_pending</code> 将待关闭的 <code>handle</code> 放到 <code>loop-&gt;closing_handles</code> 链表末尾，<code>panding</code> 的含义是延迟到下次事件循环处理。</p>
+<p>在 <code>uv_run</code> 的 <code>Call close callbacks</code> 阶段，通过函数 <code>uv__run_closing_handles</code> 专门负责处理 <code>loop-&gt;closing_handles</code>：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L343">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L343</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_run</span><span class="params">(<span class="type">uv_loop_t</span>* loop, uv_run_mode mode)</span> &#123;</span><br><span class="line">  <span class="keyword">while</span> (r != <span class="number">0</span> &amp;&amp; loop-&gt;stop_flag == <span class="number">0</span>) &#123;</span><br><span class="line">    uv__run_closing_handles(loop);</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L286">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L286</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">uv__run_closing_handles</span><span class="params">(<span class="type">uv_loop_t</span>* loop)</span> &#123;</span><br><span class="line">  <span class="type">uv_handle_t</span>* p;</span><br><span class="line">  <span class="type">uv_handle_t</span>* q;</span><br><span class="line"></span><br><span class="line">  p = loop-&gt;closing_handles;</span><br><span class="line">  loop-&gt;closing_handles = <span class="literal">NULL</span>;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">while</span> (p) &#123;</span><br><span class="line">    q = p-&gt;next_closing;</span><br><span class="line">    uv__finish_close(p);</span><br><span class="line">    p = q;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L236">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L236</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">uv__finish_close</span><span class="params">(<span class="type">uv_handle_t</span>* handle)</span> &#123;</span><br><span class="line">  assert(handle-&gt;flags &amp; UV_HANDLE_CLOSING);</span><br><span class="line">  assert(!(handle-&gt;flags &amp; UV_HANDLE_CLOSED));</span><br><span class="line">  handle-&gt;flags |= UV_HANDLE_CLOSED;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">switch</span> (handle-&gt;type) &#123;</span><br><span class="line">    <span class="comment">// </span></span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  uv__handle_unref(handle);</span><br><span class="line">  QUEUE_REMOVE(&amp;handle-&gt;handle_queue);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (handle-&gt;close_cb) &#123;</span><br><span class="line">    handle-&gt;close_cb(handle);</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>首先将 <code>closing_handles</code> 从 <code>loop</code> 摘除，然后遍历 <code>closing_handles</code>，通过 <code>uv__finish_close</code> 对每个 <code>handle</code> 进行最后的 <code>close</code>，<code>handle</code> 被移除 <code>loop-&gt;handle_queue</code> 并调用其关联的 <code>close_cb</code>，至此 <code>handle</code> 彻底没有了和 <code>loop</code> 的关联走完了一个完整的生命周期。</p>
+<p><code>uv_close</code> 的处理过程被拆分成了两段，一段是调用 <code>uv__make_close_pending</code>，另一段是在事件循环中调用 <code>uv__run_closing_handles</code>，关闭的过程是异步的，用户程序无法仅仅是通过 <code>uv_close</code> 返回判断关闭是否完成，需要在 <code>close_cb</code> 中接收异步操作结果。那么问题来了，为什么要拆分成两段而不是一次性处理完呢？</p>
+<p><code>uv_close</code> 一般来说都是在异步回调中被调用的，因为一个 <code>handle</code> 的关闭在逻辑上依赖于 <code>handle</code> 完成相关工作，而异步的逻辑中，完成工作后会调用相应的回调，所以只有在回调中调用 <code>uv_close</code> 才能使逻辑上是同步。</p>
+<p><code>Close</code> 阶段可以看做是 <code>Init</code> 阶段的反向操作。</p>
+<p><code>handle</code> 就这样伴随着事件循环经历了 <code>Init</code> -&gt; <code>Start</code> -&gt; <code>Stop</code> -&gt; <code>Close</code> 等生命周期。</p>
+<h2 id="Reference-counting：Ref-Unref"><a href="#Reference-counting：Ref-Unref" class="headerlink" title="Reference counting：Ref &amp; Unref"></a>Reference counting：Ref &amp; Unref</h2><p>上文已经遇到过，<code>handle</code> 有个 <code>UV_HANDLE_REF</code> 标志位，这个状态用于控制 <code>handle</code> 是否计入 <code>loop-&gt;active_handles</code> 引用计数，因为 <code>handle</code> 的引用计数影响 <code>loop</code> 活动状态，所以 <code>UV_HANDLE_REF</code> 状态会间接影响 <code>loop</code> 的状态。</p>
+<p>接下来，我们看下引用计数相关API：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/view-v1.28.0/src/uv-common.c#L502">https://github.com/libuv/libuv/blob/view-v1.28.0/src/uv-common.c#L502</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">uv_ref</span><span class="params">(<span class="type">uv_handle_t</span>* handle)</span> &#123;</span><br><span class="line">  uv__handle_ref(handle);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">uv_unref</span><span class="params">(<span class="type">uv_handle_t</span>* handle)</span> &#123;</span><br><span class="line">  uv__handle_unref(handle);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">uv_has_ref</span><span class="params">(<span class="type">const</span> <span class="type">uv_handle_t</span>* handle)</span> &#123;</span><br><span class="line">  <span class="keyword">return</span> uv__has_ref(handle);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L255">https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L255</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> uv__handle_ref(h)                                                     \</span></span><br><span class="line"><span class="meta">  do &#123;                                                                        \</span></span><br><span class="line"><span class="meta">    <span class="keyword">if</span> (((h)-&gt;flags &amp; UV_HANDLE_REF) != 0) break;                             \</span></span><br><span class="line"><span class="meta">    (h)-&gt;flags |= UV_HANDLE_REF;                                              \</span></span><br><span class="line"><span class="meta">    <span class="keyword">if</span> (((h)-&gt;flags &amp; UV_HANDLE_CLOSING) != 0) break;                         \</span></span><br><span class="line"><span class="meta">    <span class="keyword">if</span> (((h)-&gt;flags &amp; UV_HANDLE_ACTIVE) != 0) uv__active_handle_add(h);       \</span></span><br><span class="line"><span class="meta">  &#125;                                                                           \</span></span><br><span class="line"><span class="meta">  while (0)</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> uv__handle_unref(h)                                                   \</span></span><br><span class="line"><span class="meta">  do &#123;                                                                        \</span></span><br><span class="line"><span class="meta">    <span class="keyword">if</span> (((h)-&gt;flags &amp; UV_HANDLE_REF) == 0) break;                             \</span></span><br><span class="line"><span class="meta">    (h)-&gt;flags &amp;= ~UV_HANDLE_REF;                                             \</span></span><br><span class="line"><span class="meta">    <span class="keyword">if</span> (((h)-&gt;flags &amp; UV_HANDLE_CLOSING) != 0) break;                         \</span></span><br><span class="line"><span class="meta">    <span class="keyword">if</span> (((h)-&gt;flags &amp; UV_HANDLE_ACTIVE) != 0) uv__active_handle_rm(h);        \</span></span><br><span class="line"><span class="meta">  &#125;                                                                           \</span></span><br><span class="line"><span class="meta">  while (0)</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> uv__has_ref(h)                                                        \</span></span><br><span class="line"><span class="meta">  (((h)-&gt;flags &amp; UV_HANDLE_REF) != 0)</span></span><br></pre></td></tr></table></figure>
+
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L221">https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L221</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> uv__active_handle_add(h)                                              \</span></span><br><span class="line"><span class="meta">  do &#123;                                                                        \</span></span><br><span class="line"><span class="meta">    (h)-&gt;loop-&gt;active_handles++;                                              \</span></span><br><span class="line"><span class="meta">  &#125;                                                                           \</span></span><br><span class="line"><span class="meta">  while (0)</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> uv__active_handle_rm(h)                                               \</span></span><br><span class="line"><span class="meta">  do &#123;                                                                        \</span></span><br><span class="line"><span class="meta">    (h)-&gt;loop-&gt;active_handles--;                                              \</span></span><br><span class="line"><span class="meta">  &#125;                                                                           \</span></span><br><span class="line"><span class="meta">  while (0)</span></span><br></pre></td></tr></table></figure>
+
+<p>存在引用计数标志 <code>UV_HANDLE_REF</code>，会计入引用计数，否则不会引用计数。</p>
+<p>实现非常简单，在条件满足的情况下，更新 <code>loop-&gt;active_handles</code> 值。</p>
+<p>在事件循环初始化函数 <code>uv_loop_init</code> 中，<code>loop-&gt;child_watcher</code>、<code>loop-&gt;wq_async</code> 都被 <code>Unref</code> 了，避免影响 <code>loop</code> 的存活状态。</p>
+<h2 id="Status：Active-Closing"><a href="#Status：Active-Closing" class="headerlink" title="Status：Active &amp; Closing"></a>Status：Active &amp; Closing</h2><p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L400">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L400</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_is_active</span><span class="params">(<span class="type">const</span> <span class="type">uv_handle_t</span>* handle)</span> &#123;</span><br><span class="line">  <span class="keyword">return</span> uv__is_active(handle);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L301">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/core.c#L301</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_is_closing</span><span class="params">(<span class="type">const</span> <span class="type">uv_handle_t</span>* handle)</span> &#123;</span><br><span class="line">  <span class="keyword">return</span> uv__is_closing(handle);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L233">https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L233</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> uv__is_active(h)                                                      \</span></span><br><span class="line"><span class="meta">  (((h)-&gt;flags &amp; UV_HANDLE_ACTIVE) != 0)</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> uv__is_closing(h)                                                     \</span></span><br><span class="line"><span class="meta">  (((h)-&gt;flags &amp; (UV_HANDLE_CLOSING | UV_HANDLE_CLOSED)) != 0)</span></span><br></pre></td></tr></table></figure>
+
+<p>实现简单，无需解释。</p>
+<h2 id="handle-和-loop-的关联关系"><a href="#handle-和-loop-的关联关系" class="headerlink" title="handle 和 loop 的关联关系"></a>handle 和 loop 的关联关系</h2><p><code>handle</code> 和 <code>loop</code> 之间的关联是最为重要的，<code>handle</code> 必须注册到 <code>loop</code> 中的各种结构中才有意义，脱离 <code>loop</code> 的 <code>handle</code> 是毫无用途的，只有关联到 <code>loop</code> 上的 <code>handle</code> 才能在事件循环的过程中被处理。以上 <code>handle</code> 生命周期的核心就是在管理这种关系。除了以上基本的关联之外，<code>handle</code> 和 <code>loop</code> 还有其他关联。</p>
+<p>在 <code>Init</code> 和 <code>Close</code> 操作中，<code>handle</code> 被插入&#x2F;移除 <code>loop-&gt;handle_queue</code> 队列，<code>uv__active_handle_add</code>、<code>uv__active_handle_rm</code> 这两个宏函数修改 <code>handle</code> 的引用计数，进而间接修改了 <code>loop</code> 的状态。</p>
+<p>除 <code>loop-&gt;handle_queue</code> 外，<code>loop</code> 中还有多个 <code>handle</code> 有关的队列，<code>handle</code> 除了被插入 <code>loop-&gt;handle_queue</code> 队列外，还会被插入到类型特定的结构中（如：队列、链表、堆），在 <code>uv_run</code> 的各个阶段，libuv 依赖这些结构完成工作中，下面将逐个来介绍一下都有哪些关联以及都是什么用途。</p>
+<p>在 <code>uv_loop_t</code> 中，有多个相关 <code>handle</code> 队列：</p>
+<h3 id="uv-idle-t-uv-check-t-uv-check-t"><a href="#uv-idle-t-uv-check-t-uv-check-t" class="headerlink" title="uv_idle_t uv_check_t uv_check_t"></a>uv_idle_t uv_check_t uv_check_t</h3><p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/include/uv/unix.h#L231">https://github.com/libuv/libuv/blob/v1.28.0/include/uv/unix.h#L231</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_LOOP_PRIVATE_FIELDS                                                \</span></span><br><span class="line"><span class="meta">  void* process_handles[2];                                                   \</span></span><br><span class="line"><span class="meta">  void* prepare_handles[2];                                                   \</span></span><br><span class="line"><span class="meta">  void* check_handles[2];                                                     \</span></span><br><span class="line"><span class="meta">  void* idle_handles[2];                                                      \</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>uv_idle_t</code> 还会被插入到 <code>loop-&gt;idle_handles</code> 队列头部，队列节点为 <code>handle-&gt;queue</code>；</li>
+<li><code>uv_check_t</code> 还会被插入到 <code>loop-&gt;check_handles</code> 队列头部，队列节点为 <code>handle-&gt;queue</code>；</li>
+<li><code>uv_check_t</code> 还会被插入到 <code>loop-&gt;prepare_handles</code> 队列头部，队列节点为 <code>handle-&gt;queue</code>。</li>
+</ul>
+<p>队列初始化：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/loop.c#L29">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/loop.c#L29</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_loop_init</span><span class="params">(<span class="type">uv_loop_t</span>* loop)</span> &#123;</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;idle_handles);</span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;async_handles);</span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;check_handles);</span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;prepare_handles);</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>队列插入节点：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/loop-watcher.c#L24">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/loop-watcher.c#L24</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_LOOP_WATCHER_DEFINE(name, type)                                    \</span></span><br><span class="line"><span class="meta">  ...</span></span><br><span class="line">  <span class="type">int</span> uv_#<span class="meta">#name##_start(uv_##name##_t* handle, uv_##name##_cb cb) &#123;           \</span></span><br><span class="line"><span class="meta">    ...</span></span><br><span class="line">    QUEUE_INSERT_HEAD(&amp;handle-&gt;loop-&gt;name##_handles, &amp;handle-&gt;<span class="built_in">queue</span>);         \</span><br><span class="line">    ...</span><br><span class="line">  &#125;                                                                           \</span><br><span class="line">  ...</span><br></pre></td></tr></table></figure>
+
+<h3 id="uv-async-t"><a href="#uv-async-t" class="headerlink" title="uv_async_t"></a>uv_async_t</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_LOOP_PRIVATE_FIELDS                                                \</span></span><br><span class="line"><span class="meta">  void* async_handles[2];                                                     \</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>uv_async_t</code> 还会被插入到 <code>loop-&gt;async_handles</code> 队列尾部，队列节点为 <code>handle-&gt;queue</code></li>
+</ul>
+<p>队列初始化：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.x/src/unix/loop.c#L29">https://github.com/libuv/libuv/blob/v1.x/src/unix/loop.c#L29</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_loop_init</span><span class="params">(<span class="type">uv_loop_t</span>* loop)</span> &#123;</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;async_handles);</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>队列插入节点：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.x/src/unix/async.c#L40">https://github.com/libuv/libuv/blob/v1.x/src/unix/async.c#L40</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_async_init</span><span class="params">(<span class="type">uv_loop_t</span>* loop, <span class="type">uv_async_t</span>* handle, uv_async_cb async_cb)</span> &#123;</span><br><span class="line">  QUEUE_INSERT_TAIL(&amp;loop-&gt;async_handles, &amp;handle-&gt;<span class="built_in">queue</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="uv-process-t"><a href="#uv-process-t" class="headerlink" title="uv_process_t"></a>uv_process_t</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_LOOP_PRIVATE_FIELDS                                                \</span></span><br><span class="line"><span class="meta">  void* process_handles[2];                                                   \</span></span><br></pre></td></tr></table></figure>
+
+<p><code>uv_process_t</code> 还会被插入到 <code>loop-&gt;process_handles</code> 队列尾部，队列节点为 <code>handle-&gt;queue</code>。</p>
+<p>队列初始化：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.x/src/unix/loop.c#L29">https://github.com/libuv/libuv/blob/v1.x/src/unix/loop.c#L29</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_loop_init</span><span class="params">(<span class="type">uv_loop_t</span>* loop)</span> &#123;</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">  uv__handle_unref(&amp;loop-&gt;child_watcher);</span><br><span class="line">  loop-&gt;child_watcher.flags |= UV_HANDLE_INTERNAL;</span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;process_handles);</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>队列插入节点：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/unix/process.c#L410">https://github.com/libuv/libuv/blob/v1.28.0/src/unix/process.c#L410</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_spawn</span><span class="params">(<span class="type">uv_loop_t</span>* loop,</span></span><br><span class="line"><span class="params">             <span class="type">uv_process_t</span>* process,</span></span><br><span class="line"><span class="params">             <span class="type">const</span> <span class="type">uv_process_options_t</span>* options)</span> &#123;</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">  <span class="comment">/* Only activate this handle if exec() happened successfully */</span></span><br><span class="line">  <span class="keyword">if</span> (exec_errorno == <span class="number">0</span>) &#123;</span><br><span class="line">    QUEUE_INSERT_TAIL(&amp;loop-&gt;process_handles, &amp;process-&gt;<span class="built_in">queue</span>);</span><br><span class="line">    uv__handle_start(process);</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="uv-timer-t"><a href="#uv-timer-t" class="headerlink" title="uv_timer_t"></a>uv_timer_t</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_LOOP_PRIVATE_FIELDS                                                \</span></span><br><span class="line"><span class="meta">  struct &#123;                                                                    \</span></span><br><span class="line"><span class="meta">    void* min;                                                                \</span></span><br><span class="line"><span class="meta">    unsigned int nelts;                                                       \</span></span><br><span class="line"><span class="meta">  &#125; timer_heap;                                                               \</span></span><br></pre></td></tr></table></figure>
+
+<p><code>uv_timer_t</code> 还会被插入到 <code>loop-&gt;timer_heap</code> 堆（最小堆）中，堆节点为 <code>handle-&gt;heap_node</code>。</p>
+<p>以上这些针对于不同类型的<code>队列/链表/堆</code>结构，都是为了方便的找到并统一处理相同类型的 <code>handle</code>。除了以上这些类型的 <code>handle</code> 之外，在 <code>loop</code> 上并没有这种特定类型的直接入口，而是通过其他链间接访问到 <code>handle</code> 的。</p>
+<h3 id="uv-io-t"><a href="#uv-io-t" class="headerlink" title="uv__io_t"></a>uv__io_t</h3><p>在 <code>loop</code> 中，存在一个 <code>watchers</code> 数组，这个数组的每一项都是一个指向 <code>uv__io_t</code> 结构的指针，<code>uv__io_t</code> 是一个I&#x2F;O观察者被内嵌到多个IO相关的 <code>handle</code> 结构中，所以所有的内嵌I&#x2F;O观察者的 <code>handle</code> 都通过 <code>watchers</code> 被关联到 <code>loop</code> 上了。<code>uv__io_t</code> 存在多个子类型，这些子类型都可以被放到 <code>watchers</code> 数组中。</p>
+<p>另外，还存在两个I&#x2F;O观察者队列：</p>
+<ul>
+<li><code>watcher_queue</code>：所有的IO观察者都会被插入到这个队列中。</li>
+<li><code>pending_queue</code>：所有的挂起IO观察者都会被插入到这个队列中。</li>
+</ul>
+<p><code>uv__io_t</code> 相关字段声明：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/include/uv/unix.h#L218">https://github.com/libuv/libuv/blob/v1.28.0/include/uv/unix.h#L218</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_LOOP_PRIVATE_FIELDS                                                \</span></span><br><span class="line"><span class="meta">  void* pending_queue[2];                                                     \</span></span><br><span class="line"><span class="meta">  void* watcher_queue[2];                                                     \</span></span><br><span class="line"><span class="meta">  uv__io_t** watchers;                                                        \</span></span><br><span class="line"><span class="meta">  unsigned int nwatchers;                                                     \</span></span><br><span class="line"><span class="meta">  unsigned int nfds;                                                          \</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="uv-work"><a href="#uv-work" class="headerlink" title="uv__work"></a>uv__work</h3><p><code>uv__work</code> 是 libuv 中任务的抽象，任务有线程池处理，任务在发起 <code>uv_work_t</code> request 时创建。</p>
+<p>在 <code>loop</code> 中，存在一个任务队列，这个队列中记录了所以经线程池处理完成的任务，队列入口为：<code>loop-&gt;wq</code></p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/include/uv/unix.h#L218">https://github.com/libuv/libuv/blob/v1.28.0/include/uv/unix.h#L218</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_LOOP_PRIVATE_FIELDS                                                \</span></span><br><span class="line"><span class="meta">  void* wq[2];                                                                \</span></span><br></pre></td></tr></table></figure>
+
+<p>队列初始化：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/view-v1.28.0/src/unix/loop.c#L29">https://github.com/libuv/libuv/blob/view-v1.28.0/src/unix/loop.c#L29</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">uv_loop_init</span><span class="params">(<span class="type">uv_loop_t</span>* loop)</span> &#123;</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">  QUEUE_INIT(&amp;loop-&gt;wq);</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>任务被处理完成或者任务取消后，都会被插入到该队里中。</p>
+<h3 id="closing-handles"><a href="#closing-handles" class="headerlink" title="closing_handles"></a>closing_handles</h3><p><code>Close</code> 中提到过 <code>closing_handles</code> 关联了所有正在关闭的 <code>handle</code>，这也是一个关联的入口。</p>
+<p><code>handle</code> 可能同时存在于 <code>loop-&gt;handle_queue</code> 队列、<code>loop-&gt;closing_handles</code> 链表 以及 其他某一个特定类型的 <code>handle</code> 队列中。</p>
+<p>通过上面的描述，可以在大脑中勾勒出一幅数据结构图。</p>
+<p>除了 通过 <code>loop</code> 可以找到每一个 Handle，每一个 Handle 也可以通过其 <code>loop</code> 字段找到其所在的 <code>loop</code>。</p>
+<p>以上这些 <code>handle</code> 通过各种方式关联到 <code>loop</code> 上除了 <code>loop</code> 作为资源的统一入口需要管理注册记录所有资源外，还需要使 <code>事件循环</code> 在运行的时候，能够方便的高效的处理这些 <code>handle</code>。</p>
+<h2 id="Request"><a href="#Request" class="headerlink" title="Request"></a>Request</h2><p>Requests 一般代表一个短生命周期的<code>操作</code>，有些 Request 需要通过在 Handle 上执行，有些 Request 则可以直接执行。</p>
+<p>在 libuv 中，有如下 Request：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Request types. */</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_req_s</span> <span class="title">uv_req_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_getaddrinfo_s</span> <span class="title">uv_getaddrinfo_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_getnameinfo_s</span> <span class="title">uv_getnameinfo_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_shutdown_s</span> <span class="title">uv_shutdown_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_write_s</span> <span class="title">uv_write_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_connect_s</span> <span class="title">uv_connect_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_udp_send_s</span> <span class="title">uv_udp_send_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_fs_s</span> <span class="title">uv_fs_t</span>;</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">uv_work_s</span> <span class="title">uv_work_t</span>;</span></span><br></pre></td></tr></table></figure>
+
+<p><code>uv_getaddrinfo_t</code> <code>uv_getnameinfo_t</code> <code>uv_fs_t</code> <code>uv_work_t</code> 可以直接执行，不依赖于 <code>handle</code>，直接关联到 <code>loop</code> 上。</p>
+<p><code>uv_connect_t</code> <code>uv_write_t</code> <code>uv_udp_send_t</code> <code>uv_shutdown_t</code> 都是跟读写相关的 <code>request</code>，其操作依赖于 <code>uv_stream_t</code>，也就是这些操作作用于 <code>uv_stream_t</code>，这些 <code>request</code> 通过 <code>handle</code> 关联到 <code>loop</code> 上。</p>
+<p>同 <code>handle</code> 相似，<code>request</code> 也有一个基础结构 <code>uv_req_s</code>，其他 <code>request</code> 都通过组合复用 <code>uv_req_s</code> 的字段。</p>
+<p><code>uv_req_s</code> 结构定义如下：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> UV_REQ_FIELDS                   \</span></span><br><span class="line"><span class="meta">  <span class="comment">/* public */</span>                          \</span></span><br><span class="line"><span class="meta">  void* data;                           \</span></span><br><span class="line"><span class="meta">  <span class="comment">/* read-only */</span>                       \</span></span><br><span class="line"><span class="meta">  uv_req_type type;                     \</span></span><br><span class="line"><span class="meta">  <span class="comment">/* private */</span>                         \</span></span><br><span class="line"><span class="meta">  void* reserved[6];                    \</span></span><br><span class="line"><span class="meta">  UV_REQ_PRIVATE_FIELDS                 \</span></span><br><span class="line"><span class="meta"></span></span><br><span class="line"><span class="comment">/* Abstract base class of all requests. */</span></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">uv_req_s</span> &#123;</span></span><br><span class="line">  UV_REQ_FIELDS</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p><code>request</code> 并不需要在用户代码中显示的初始化，初始过程在相关的实现代码中由核心处理，通用的初始化部分 由 <code>uv__req_init</code> 函数处理，如下代码实现：</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L310">https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L310</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> uv__req_init(loop, req, typ)                                          \</span></span><br><span class="line"><span class="meta">  do &#123;                                                                        \</span></span><br><span class="line"><span class="meta">    UV_REQ_INIT(req, typ);                                                    \</span></span><br><span class="line"><span class="meta">    uv__req_register(loop, req);                                              \</span></span><br><span class="line"><span class="meta">  &#125;                                                                           \</span></span><br><span class="line"><span class="meta">  while (0)</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta"># <span class="keyword">define</span> UV_REQ_INIT(req, typ)                                                \</span></span><br><span class="line"><span class="meta">  do &#123;                                                                        \</span></span><br><span class="line"><span class="meta">    (req)-&gt;type = (typ);                                                      \</span></span><br><span class="line"><span class="meta">  &#125;                                                                           \</span></span><br><span class="line"><span class="meta">  while (0)</span></span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br></pre></td></tr></table></figure>
+
+<p><a target="_blank" rel="noopener" href="https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L205">https://github.com/libuv/libuv/blob/v1.28.0/src/uv-common.h#L205</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> uv__req_register(loop, req)                                           \</span></span><br><span class="line"><span class="meta">  do &#123;                                                                        \</span></span><br><span class="line"><span class="meta">    (loop)-&gt;active_reqs.count++;                                              \</span></span><br><span class="line"><span class="meta">  &#125;                                                                           \</span></span><br><span class="line"><span class="meta">  while (0)</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> uv__req_unregister(loop, req)                                         \</span></span><br><span class="line"><span class="meta">  do &#123;                                                                        \</span></span><br><span class="line"><span class="meta">    assert(uv__has_active_reqs(loop));                                        \</span></span><br><span class="line"><span class="meta">    (loop)-&gt;active_reqs.count--;                                              \</span></span><br><span class="line"><span class="meta">  &#125;                                                                           \</span></span><br><span class="line"><span class="meta">  while (0)</span></span><br></pre></td></tr></table></figure>
+
+<p><code>uv__req_init</code> 初始化了 <code>request</code> 的类型，并通过 <code>uv__req_register</code> 更新 <code>request</code> 的引用计数，也可以通过 <code>uv__req_unregister</code> 反注册。</p>
+<p><code>request</code> 的更多内容，将在后续的分析中结合相关功能继续介绍。 </p>
+<hr>
+<p><a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/tree/master/node.js/libuv/3-libuv-handle-and-request.md" >查看源文件</a>&nbsp;&nbsp;<a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/edit/master/node.js/libuv/3-libuv-handle-and-request.md">编辑源文件</a></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>liuyanjie
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://blog.butonly.com/posts/node.js/libuv/3-libuv-handle-and-request/" title="libuv源码分析（三）资源抽象：Handle 和 Request">https://blog.butonly.com/posts/node.js/libuv/3-libuv-handle-and-request/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/libuv/" rel="tag"># libuv</a>
+              <a href="/tags/node-js/" rel="tag"># node.js</a>
+              <a href="/tags/eventloop/" rel="tag"># eventloop</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/posts/node.js/libuv/2-libuv-event-loop/" rel="prev" title="libuv源码分析（二）事件循环（Eventloop）">
+                  <i class="fa fa-angle-left"></i> libuv源码分析（二）事件循环（Eventloop）
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/posts/node.js/libuv/4-libuv-timer/" rel="next" title="libuv源码分析（四）定时器（Timer）">
+                  libuv源码分析（四）定时器（Timer） <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    
+  <div class="comments" id="disqus_thread">
+    <noscript>Please enable JavaScript to view the comments powered by Disqus.</noscript>
+  </div>
+  
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2018 – 
+    <span itemprop="copyrightYear">2025</span>
+    <span class="with-love">
+      <i class="heartbeat"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">liuyanjie</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">166k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:31</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+  <a href="https://github.com/c-cc-cc" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+<script class="next-config" data-name="disqus" type="application/json">{"enable":true,"shortname":"liuyanjie","count":true,"lazyload":true,"i18n":{"disqus":"disqus"}}</script>
+<script src="/js/third-party/comments/disqus.js" defer></script>
+
+</body>
+</html>

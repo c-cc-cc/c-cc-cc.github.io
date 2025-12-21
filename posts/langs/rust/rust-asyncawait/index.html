@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)"><meta name="generator" content="Hexo 8.1.1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png">
+  <link rel="mask-icon" href="/favicon.png" color="#222">
+  <link rel="manifest" href="/manifest.json">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.css" integrity="sha256-gkQVf8UKZgQ0HyuxL/VnacadJ+D2Kox2TCEBuNQg5+w=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"blog.butonly.com","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.26.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"tomorrow-night-bright"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":true,"pangu":true,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"algolia":{"appID":"FRAAR0AUP0","apiKey":"459ace1d7f5aabfa15b4f89baba340b3","indexName":"blog.butonly.com","hits":{"per_page":10}}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="本文由AI辅助生成。本文内容基于 学习 Rust async&#x2F;.await 实现原理 过程中与 DeepSeek 探讨相关问题的对话产生的内容，由 DeepSeek 整理，经 Gemini&#x2F;Claude 审阅补充去 AI 味，最后经过人工审阅修改形成。    Rust async&#x2F;.await 已经是 Rust 高并发编程的最佳实践，深入理解 Rust async&#x2F;.awai">
+<meta property="og:type" content="article">
+<meta property="og:title" content="深入理解 Rust async&#x2F;.await 实现原理">
+<meta property="og:url" content="https://blog.butonly.com/posts/langs/rust/rust-asyncawait/index.html">
+<meta property="og:site_name" content="liuyanjie&#39;s blog">
+<meta property="og:description" content="本文由AI辅助生成。本文内容基于 学习 Rust async&#x2F;.await 实现原理 过程中与 DeepSeek 探讨相关问题的对话产生的内容，由 DeepSeek 整理，经 Gemini&#x2F;Claude 审阅补充去 AI 味，最后经过人工审阅修改形成。    Rust async&#x2F;.await 已经是 Rust 高并发编程的最佳实践，深入理解 Rust async&#x2F;.awai">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2025-12-21T03:00:00.000Z">
+<meta property="article:modified_time" content="2025-12-21T01:50:44.749Z">
+<meta property="article:author" content="liuyanjie">
+<meta property="article:tag" content="rust">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://blog.butonly.com/posts/langs/rust/rust-asyncawait/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://blog.butonly.com/posts/langs/rust/rust-asyncawait/","path":"posts/langs/rust/rust-asyncawait/","title":"深入理解 Rust async/.await 实现原理"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>深入理解 Rust async/.await 实现原理 | liuyanjie's blog</title>
+  
+    <script async src="https://www.googletagmanager.com/gtag/js?id=014348069229275019795:-z92dm0sjiy"></script>
+  <script class="next-config" data-name="google_analytics" type="application/json">{"tracking_id":"014348069229275019795:-z92dm0sjiy","only_pageview":false,"measure_protocol_api_secret":null}</script>
+  <script src="/js/third-party/analytics/google-analytics.js" defer></script>
+
+  <script src="/js/third-party/analytics/baidu-analytics.js" defer></script>
+  <script async src="https://hm.baidu.com/hm.js?4cd57e104d0d9f5862dd91d0acdb9eee"></script>
+
+
+
+
+
+
+
+  
+  <script size="300" alpha="0.6" zIndex="-1" src="https://cdn.jsdelivr.net/npm/ribbon.js@1.0.2/dist/ribbon.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.umd.js" integrity="sha256-a+H7FYzJv6oU2hfsfDGM2Ohw/cR9v+hPfxHCLdmCrE8=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/lozad@1.16.0/dist/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/pangu@7.2.0/dist/browser/pangu.umd.js" integrity="sha256-JnmRRnJK7DC6RQJbAJb6AXOM9OmWzS6z8eYultk/48Y=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script><script src="/js/bookmark.js" defer></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/algoliasearch@5.36.0/dist/lite/builds/browser.umd.js" integrity="sha256-o49zoHLDPBm9WLg6AiliAVi3axCRTqe3ltTxLvhzAVg=" crossorigin="anonymous" defer></script><script src="/js/third-party/search/algolia-search.js" defer></script>
+
+  <script class="next-config" data-name="pdf" type="application/json">{"object_url":{"url":"https://cdn.jsdelivr.net/npm/pdfobject@2.3.1/pdfobject.min.js","integrity":"sha256-jI72I8ZLVflVOisZIOaLvRew3tyvzeu6aZXFm7P7dEo="},"url":"/lib/pdf/web/viewer.html"}</script>
+  <script src="/js/third-party/tags/pdf.js" defer></script>
+
+  <script class="next-config" data-name="mermaid" type="application/json">{"enable":true,"theme":"forest","js":{"url":"https://cdn.jsdelivr.net/npm/mermaid@11.10.1/dist/mermaid.min.js","integrity":"sha256-BmQmdWDS8X2OTbrwELWK366LV6escyWhHHe0XCTU/Hk="}}</script>
+  <script src="/js/third-party/tags/mermaid.js" defer></script>
+
+
+  <script src="/js/third-party/fancybox.js" defer></script>
+
+
+
+  
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+<link rel="alternate" href="/atom.xml" title="liuyanjie's blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">liuyanjie's blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <img class="custom-logo-image" src="/logo.png" alt="liuyanjie's blog">
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="home fa-fw"></i>首页</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">6</span></a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+      <div class="search-header">
+        <span class="search-icon">
+          <i class="fa fa-search"></i>
+        </span>
+        <div class="search-input-container">
+          <input autocomplete="off" autocapitalize="off" maxlength="80"
+                placeholder="搜索..." spellcheck="false"
+                type="search" class="search-input">
+        </div>
+        <span class="popup-btn-close" role="button">
+          <i class="fa fa-times-circle"></i>
+        </span>
+      </div>
+      <div class="search-result-container">
+        <div class="search-result-icon">
+          <i class="fab fa-algolia fa-5x"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BC%95%E8%A8%80"><span class="nav-number">1.</span> <span class="nav-text">引言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reactor-%E6%A8%A1%E5%BC%8F%EF%BC%9A%E5%BC%82%E6%AD%A5%E7%BC%96%E7%A8%8B%E7%9A%84%E5%9F%BA%E7%A1%80%E6%A8%A1%E5%BC%8F"><span class="nav-number">2.</span> <span class="nav-text">Reactor 模式：异步编程的基础模式</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BC%A0%E7%BB%9F-Reactor-%E6%A8%A1%E5%BC%8F%E6%9E%B6%E6%9E%84"><span class="nav-number">2.1.</span> <span class="nav-text">传统 Reactor 模式架构</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Rust-async-await-%E6%98%AF%E5%A6%82%E4%BD%95%E5%B7%A5%E4%BD%9C%E7%9A%84%EF%BC%9F"><span class="nav-number">3.</span> <span class="nav-text">Rust async&#x2F;await 是如何工作的？</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%BB%84%E5%90%88%E5%9E%8B-Future%EF%BC%9A%E7%BC%96%E8%AF%91%E5%99%A8%E7%94%9F%E6%88%90%E7%9A%84%E7%8A%B6%E6%80%81%E6%9C%BA"><span class="nav-number">3.1.</span> <span class="nav-text">1. 组合型 Future：编译器生成的状态机</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%8A%B6%E6%80%81%E6%9C%BA%E6%89%A7%E8%A1%8C%E6%A8%A1%E5%9E%8B"><span class="nav-number">3.1.1.</span> <span class="nav-text">状态机执行模型</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%B6%E5%AD%90-Future%EF%BC%9A%E6%89%8B%E5%86%99%E7%9A%84%E5%BC%82%E6%AD%A5%E5%8E%9F%E8%AF%AD"><span class="nav-number">3.2.</span> <span class="nav-text">2. 叶子 Future：手写的异步原语</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Future-%E6%A0%91%E4%B8%8E-Task-%E6%A8%A1%E5%9E%8B"><span class="nav-number">4.</span> <span class="nav-text">Future 树与 Task 模型</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Future-%E7%9A%84%E6%A0%91%E7%8A%B6%E7%BB%93%E6%9E%84"><span class="nav-number">4.1.</span> <span class="nav-text">Future 的树状结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Task%EF%BC%9A%E8%B0%83%E5%BA%A6%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%8D%95%E4%BD%8D"><span class="nav-number">4.2.</span> <span class="nav-text">Task：调度的基本单位</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Waker%EF%BC%9A%E5%94%A4%E9%86%92-Task"><span class="nav-number">5.</span> <span class="nav-text">Waker：唤醒 Task</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Waker-%E4%B8%8E-Task-%E7%9A%84%E5%85%B3%E8%81%94"><span class="nav-number">5.1.</span> <span class="nav-text">Waker 与 Task 的关联</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B"><span class="nav-number">5.2.</span> <span class="nav-text">执行流程</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Executor-%E4%B8%8E-Reactor-%E5%8D%8F%E4%BD%9C%E6%A8%A1%E5%9E%8B"><span class="nav-number">6.</span> <span class="nav-text">Executor 与 Reactor 协作模型</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84%EF%BC%9A%E4%B8%89%E5%B1%82%E5%8D%8F%E4%BD%9C%E6%A8%A1%E5%9E%8B"><span class="nav-number">6.1.</span> <span class="nav-text">整体架构：三层协作模型</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E7%BB%84%E4%BB%B6%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90"><span class="nav-number">7.</span> <span class="nav-text">核心组件深度解析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Reactor%EF%BC%9A%E4%BA%8B%E4%BB%B6%E9%A9%B1%E5%8A%A8%E7%9A%84%E5%BC%95%E6%93%8E"><span class="nav-number">7.1.</span> <span class="nav-text">1. Reactor：事件驱动的引擎</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Waker%EF%BC%9A%E8%BF%9E%E6%8E%A5-Reactor-%E4%B8%8E-Executor-%E7%9A%84%E6%A1%A5%E6%A2%81"><span class="nav-number">7.2.</span> <span class="nav-text">2. Waker：连接 Reactor 与 Executor 的桥梁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Future-%E4%B8%8E-Reactor-%E7%9A%84%E4%BA%A4%E4%BA%92"><span class="nav-number">7.3.</span> <span class="nav-text">3. Future 与 Reactor 的交互</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9E%E9%99%85%E5%BA%94%E7%94%A8%EF%BC%9ATokio-%E8%BF%90%E8%A1%8C%E6%97%B6%E6%9E%B6%E6%9E%84"><span class="nav-number">8.</span> <span class="nav-text">实际应用：Tokio 运行时架构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%8E-Go-Node-js-%E7%9A%84%E5%AF%B9%E6%AF%94"><span class="nav-number">9.</span> <span class="nav-text">与 Go&#x2F;Node.js 的对比</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">10.</span> <span class="nav-text">总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%A1%A5%E5%85%85%E8%AF%B4%E6%98%8E"><span class="nav-number">11.</span> <span class="nav-text">补充说明</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E7%A4%BA%E4%BE%8B"><span class="nav-number">11.1.</span> <span class="nav-text">关于代码示例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Pin-%E4%B8%BA%E4%BB%80%E4%B9%88%E5%BF%85%E8%A6%81%EF%BC%9F"><span class="nav-number">11.2.</span> <span class="nav-text">Pin 为什么必要？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Executor-%E7%9A%84%E7%B1%BB%E5%9E%8B"><span class="nav-number">11.3.</span> <span class="nav-text">Executor 的类型</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="liuyanjie"
+      src="/avatar.png">
+  <p class="site-author-name" itemprop="name">liuyanjie</p>
+  <div class="site-description" itemprop="description">KISS DRY</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">13</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/liuyanjie" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;liuyanjie" rel="noopener me" target="_blank"><i class="github fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="/liuyj619@gmail.com" title="E-Mail → liuyj619@gmail.com" rel="noopener me"><i class="envelope fa-fw"></i></a>
+      </span>
+  </div>
+  <div class="cc-license animated" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="https://cdn.jsdelivr.net/npm/@creativecommons/vocabulary@2020.11.3/assets/license_badges/small/by_nc_sa.svg" alt="Creative Commons"></a>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://blog.butonly.com/posts/langs/rust/rust-asyncawait/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/avatar.png">
+      <meta itemprop="name" content="liuyanjie">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liuyanjie's blog">
+      <meta itemprop="description" content="KISS DRY">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="深入理解 Rust async&#x2F;.await 实现原理 | liuyanjie's blog">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          深入理解 Rust async/.await 实现原理
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+      
+
+      <time title="创建时间：2025-12-21 11:00:00 / 修改时间：09:50:44" itemprop="dateCreated datePublished" datetime="2025-12-21T11:00:00+08:00">2025-12-21</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/rust/" itemprop="url" rel="index"><span itemprop="name">rust</span></a>
+        </span>
+    </span>
+
+  
+  
+  <span class="post-meta-item">
+    
+      <span class="post-meta-item-icon">
+        <i class="far fa-comment"></i>
+      </span>
+      <span class="post-meta-item-text">Disqus：</span>
+    
+    <a title="disqus" href="/posts/langs/rust/rust-asyncawait/#disqus_thread" itemprop="discussionUrl">
+      <span class="post-comments-count disqus-comment-count" data-disqus-identifier="posts/langs/rust/rust-asyncawait/" itemprop="commentCount"></span>
+    </a>
+  </span>
+  
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>9.4k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>9 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><blockquote>
+<p>本文由AI辅助生成。本文内容基于 <code>学习 Rust async/.await 实现原理</code> 过程中与 <code>DeepSeek</code> 探讨相关问题的对话产生的内容，由 <code>DeepSeek</code> 整理，经 <code>Gemini/Claude</code> 审阅补充去 AI 味，最后经过人工审阅修改形成。</p>
+</blockquote>
+<hr>
+<blockquote>
+<p>Rust async&#x2F;.await 已经是 Rust 高并发编程的最佳实践，深入理解 Rust async&#x2F;.await 实现原理，有助于我们更好地使用 Rust 异步编程。<br>本文将从 Reactor 模式开始，深入探讨 Rust async&#x2F;.await 实现原理。</p>
+</blockquote>
+<h2 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h2><p>写 Rust 异步代码时，我们经常用到 <code>async/.await</code>。它让我们能用同步的思维方式写异步逻辑，非常舒服。但这种”魔法”背后到底发生了什么？</p>
+<p>更令人疑惑的是：<strong>为什么 Rust 需要显式引入 Executor（如 Tokio），而 Go 和 Node.js 似乎”没有”这个概念？</strong></p>
+<p>这一切的核心在于 Rust 采用了 <strong>编译时状态机</strong> 配合 <strong>Reactor 模式</strong> 的设计，并将运行时组件剥离出了标准库。本文试图拆解这套机制，看看编译器到底帮我们做了什么。</p>
+<h2 id="Reactor-模式：异步编程的基础模式"><a href="#Reactor-模式：异步编程的基础模式" class="headerlink" title="Reactor 模式：异步编程的基础模式"></a>Reactor 模式：异步编程的基础模式</h2><p>要理解 Rust 的异步模型，首先得聊聊 Reactor（反应器）模式。它是 Nginx、Node.js、Redis 等高性能服务背后的核心思想。简单来说，Reactor 就是通过<strong>事件循环</strong>和<strong>非阻塞 I&#x2F;O</strong> 来解决高并发问题。</p>
+<h3 id="传统-Reactor-模式架构"><a href="#传统-Reactor-模式架构" class="headerlink" title="传统 Reactor 模式架构"></a>传统 Reactor 模式架构</h3><figure class="highlight txt"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────────┐    ┌──────────────────┐</span><br><span class="line">│   Event Loop    │◄───│   Demultiplexer  │</span><br><span class="line">│                 │    │   (epoll/kqueue) │</span><br><span class="line">└─────────────────┘    └──────────────────┘</span><br><span class="line">         │                         ▲</span><br><span class="line">         │ event dispatch          │ system events notification</span><br><span class="line">         ▼                         │</span><br><span class="line">┌─────────────────┐    ┌──────────────────┐</span><br><span class="line">│  Event Handlers │    │   I/O Resources  │</span><br><span class="line">│   (callback)    │    │   (sockets/files)│</span><br><span class="line">└─────────────────┘    └──────────────────┘</span><br></pre></td></tr></table></figure>
+
+<p><strong>核心问题</strong>：虽然 Reactor 性能很好，但手写回调（Callback）非常痛苦——也就是常说的 “回调地狱”。逻辑被打散，错误处理和状态管理变得异常复杂。</p>
+<h2 id="Rust-async-await-是如何工作的？"><a href="#Rust-async-await-是如何工作的？" class="headerlink" title="Rust async&#x2F;await 是如何工作的？"></a>Rust async&#x2F;await 是如何工作的？</h2><p>在深入细节之前，我们需要区分两种截然不同的 Future：</p>
+<ol>
+<li><strong>组合型 Future (Async Block Future)</strong>：由 <code>async fn</code> 或 <code>async</code> 块生成。它们负责<strong>编排</strong>异步逻辑，内部包含多个子 Future。</li>
+<li><strong>叶子 Future (Leaf Future)</strong>：通常由 Runtime 库（如 Tokio）提供的手写结构体（如 <code>TcpStream</code> 的 read&#x2F;write）。它们处于调用树的末端，直接与 Reactor 交互。</li>
+</ol>
+<h3 id="1-组合型-Future：编译器生成的状态机"><a href="#1-组合型-Future：编译器生成的状态机" class="headerlink" title="1. 组合型 Future：编译器生成的状态机"></a>1. 组合型 Future：编译器生成的状态机</h3><p>当你在函数前加上 <code>async</code> 关键字，编译器其实会在编译阶段把它”重写”成一个匿名的<strong>状态机</strong>结构体。这个结构体实现了 <code>Future</code> trait。</p>
+<p>这就好比编译器在帮我们手动写回调，但对外暴露的接口依然是清爽的同步风格。</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 开发者编写的代码</span></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">fn</span> <span class="title function_">simple_example</span>(x: <span class="type">i32</span>) <span class="punctuation">-&gt;</span> <span class="type">i32</span> &#123;</span><br><span class="line">    <span class="keyword">let</span> <span class="variable">a</span> = <span class="title function_ invoke__">async_op1</span>(x).<span class="keyword">await</span>;</span><br><span class="line">    <span class="keyword">let</span> <span class="variable">b</span> = <span class="title function_ invoke__">async_op2</span>(a).<span class="keyword">await</span>;</span><br><span class="line">    b + <span class="number">1</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 编译器生成的近似代码</span></span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">SimpleExampleFuture</span> &#123;</span><br><span class="line">    state: SimpleExampleState,</span><br><span class="line">    x: <span class="type">i32</span>,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">enum</span> <span class="title class_">SimpleExampleState</span> &#123;</span><br><span class="line">    Start,</span><br><span class="line">    AfterFirstAwait &#123; op1_future: AsyncOp1Future &#125;,</span><br><span class="line">    AfterSecondAwait &#123; a: <span class="type">i32</span>, op2_future: AsyncOp2Future &#125;,</span><br><span class="line">    Done,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="状态机执行模型"><a href="#状态机执行模型" class="headerlink" title="状态机执行模型"></a>状态机执行模型</h4><p>每个 <code>.await</code> 点对应状态机的一个状态转换：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 注意：这是简化的概念性伪代码，用于说明状态机原理</span></span><br><span class="line"><span class="comment">// 实际编译器生成的代码更复杂，且处理了 Pin、生命周期等细节</span></span><br><span class="line"><span class="keyword">impl</span> <span class="title class_">Future</span> <span class="keyword">for</span> <span class="title class_">SimpleExampleFuture</span> &#123;</span><br><span class="line">    <span class="keyword">type</span> <span class="title class_">Output</span> = <span class="type">i32</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">poll</span>(<span class="keyword">mut</span> <span class="keyword">self</span>: Pin&lt;&amp;<span class="keyword">mut</span> <span class="keyword">Self</span>&gt;, cx: &amp;<span class="keyword">mut</span> Context&lt;<span class="symbol">&#x27;_</span>&gt;) <span class="punctuation">-&gt;</span> Poll&lt;<span class="keyword">Self</span>::Output&gt; &#123;</span><br><span class="line">        <span class="keyword">loop</span> &#123;</span><br><span class="line">            <span class="keyword">match</span> &amp;<span class="keyword">mut</span> <span class="keyword">self</span>.state &#123;</span><br><span class="line">                SimpleExampleState::Start =&gt; &#123;</span><br><span class="line">                    <span class="comment">// 初始化逻辑，只执行一次</span></span><br><span class="line">                    <span class="keyword">let</span> <span class="variable">op1_future</span> = <span class="title function_ invoke__">async_op1</span>(<span class="keyword">self</span>.x);</span><br><span class="line">                    <span class="keyword">self</span>.state = SimpleExampleState::AfterFirstAwait &#123; op1_future &#125;;</span><br><span class="line">                    <span class="comment">// 状态转换后继续循环，立即尝试 poll 新创建的 future</span></span><br><span class="line">                &#125;</span><br><span class="line">                </span><br><span class="line">                SimpleExampleState::AfterFirstAwait &#123; <span class="keyword">ref</span> <span class="keyword">mut</span> op1_future &#125; =&gt; &#123;</span><br><span class="line">                    <span class="comment">// 注意：实际代码需要处理 Pin Projection（例如使用 pin-project 库）</span></span><br><span class="line">                    <span class="comment">// 才能从 Pin&lt;&amp;mut Self&gt; 安全地获取字段的 Pin&lt;&amp;mut Field&gt;</span></span><br><span class="line">                    <span class="comment">// 这里为简化演示使用 unsafe</span></span><br><span class="line">                    <span class="keyword">match</span> <span class="keyword">unsafe</span> &#123; Pin::<span class="title function_ invoke__">new_unchecked</span>(op1_future) &#125;.<span class="title function_ invoke__">poll</span>(cx) &#123;</span><br><span class="line">                        Poll::<span class="title function_ invoke__">Ready</span>(a) =&gt; &#123;</span><br><span class="line">                            <span class="comment">// 子 Future 完成，转换到下一状态</span></span><br><span class="line">                            <span class="keyword">let</span> <span class="variable">op2_future</span> = <span class="title function_ invoke__">async_op2</span>(a);</span><br><span class="line">                            <span class="keyword">self</span>.state = SimpleExampleState::AfterSecondAwait &#123; a, op2_future &#125;;</span><br><span class="line">                            <span class="comment">// 继续循环处理新状态</span></span><br><span class="line">                        &#125;</span><br><span class="line">                        Poll::Pending =&gt; <span class="keyword">return</span> Poll::Pending, <span class="comment">// 快速返回，不阻塞</span></span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">                </span><br><span class="line">                SimpleExampleState::AfterSecondAwait &#123; a, <span class="keyword">ref</span> <span class="keyword">mut</span> op2_future &#125; =&gt; &#123;</span><br><span class="line">                    <span class="keyword">match</span> <span class="keyword">unsafe</span> &#123; Pin::<span class="title function_ invoke__">new_unchecked</span>(op2_future) &#125;.<span class="title function_ invoke__">poll</span>(cx) &#123;</span><br><span class="line">                        Poll::<span class="title function_ invoke__">Ready</span>(b) =&gt; &#123;</span><br><span class="line">                            <span class="keyword">let</span> <span class="variable">result</span> = b + <span class="number">1</span>;</span><br><span class="line">                            <span class="keyword">self</span>.state = SimpleExampleState::Done;</span><br><span class="line">                            <span class="keyword">return</span> Poll::<span class="title function_ invoke__">Ready</span>(result);</span><br><span class="line">                        &#125;</span><br><span class="line">                        Poll::Pending =&gt; <span class="keyword">return</span> Poll::Pending,</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">                </span><br><span class="line">                SimpleExampleState::Done =&gt; &#123;</span><br><span class="line">                    <span class="built_in">panic!</span>(<span class="string">&quot;Future polled after completion&quot;</span>);</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>关键理解</strong>：</p>
+<ul>
+<li>每个 <code>Await</code> 状态的核心是先执行 <code>poll</code>，再根据结果决定后续逻辑</li>
+<li>在 <code>Poll::Pending</code> 时立即返回，不会执行任何依赖结果的代码</li>
+<li>状态转换逻辑只在子 Future 完成时执行一次</li>
+<li>这里的 <code>loop</code> 允许在一次 <code>poll</code> 调用中处理多个连续完成的状态转换，提高效率</li>
+</ul>
+<h3 id="2-叶子-Future：手写的异步原语"><a href="#2-叶子-Future：手写的异步原语" class="headerlink" title="2. 叶子 Future：手写的异步原语"></a>2. 叶子 Future：手写的异步原语</h3><p>叶子 Future 通常是手写的，它们不再包含子 Future，这类 Future 通常直接对接操作系统或运行时内核（如 I&#x2F;O、定时器、通道等），通常不需要复杂的枚举状态，而是采用 <strong>“Try-Check-Register”</strong> 模式。</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 异步 TCP 读取的 Future（简化版叶子 Future）</span></span><br><span class="line"><span class="comment">// 注意：这是概念性示例，实际实现需要处理更多细节</span></span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">AsyncReadFuture</span> &#123;</span><br><span class="line">    socket: TcpStream,</span><br><span class="line">    buffer: <span class="type">Vec</span>&lt;<span class="type">u8</span>&gt;,</span><br><span class="line">    registered: <span class="type">bool</span>,  <span class="comment">// 标记是否已向 Reactor 注册</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">impl</span> <span class="title class_">Future</span> <span class="keyword">for</span> <span class="title class_">AsyncReadFuture</span> &#123;</span><br><span class="line">    <span class="keyword">type</span> <span class="title class_">Output</span> = <span class="type">Result</span>&lt;<span class="type">usize</span>, io::Error&gt;;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">poll</span>(<span class="keyword">mut</span> <span class="keyword">self</span>: Pin&lt;&amp;<span class="keyword">mut</span> <span class="keyword">Self</span>&gt;, cx: &amp;<span class="keyword">mut</span> Context&lt;<span class="symbol">&#x27;_</span>&gt;) <span class="punctuation">-&gt;</span> Poll&lt;<span class="keyword">Self</span>::Output&gt; &#123;</span><br><span class="line">        <span class="comment">// 1. 总是先尝试直接读取（非阻塞）</span></span><br><span class="line">        <span class="keyword">match</span> <span class="keyword">self</span>.socket.<span class="title function_ invoke__">try_read</span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>.buffer) &#123;</span><br><span class="line">            <span class="title function_ invoke__">Ok</span>(n) =&gt; Poll::<span class="title function_ invoke__">Ready</span>(<span class="title function_ invoke__">Ok</span>(n)),</span><br><span class="line">            <span class="title function_ invoke__">Err</span>(e) <span class="keyword">if</span> e.<span class="title function_ invoke__">kind</span>() == io::ErrorKind::WouldBlock =&gt; &#123;</span><br><span class="line">                <span class="comment">// 2. 如果返回 WouldBlock，说明数据未就绪</span></span><br><span class="line">                <span class="comment">// 只在未注册时才向 Reactor 注册，避免重复注册</span></span><br><span class="line">                <span class="keyword">if</span> !<span class="keyword">self</span>.registered &#123;</span><br><span class="line">                    <span class="comment">// 向 Reactor 注册感兴趣的事件（可读），并将当前 Waker 传递给 Reactor</span></span><br><span class="line">                    <span class="comment">// 当 socket 变得可读时，Reactor 会调用 waker.wake()</span></span><br><span class="line">                    <span class="keyword">self</span>.<span class="title function_ invoke__">reactor</span>().<span class="title function_ invoke__">register</span>(</span><br><span class="line">                        <span class="keyword">self</span>.socket.<span class="title function_ invoke__">as_raw_fd</span>(), </span><br><span class="line">                        Interest::READ, </span><br><span class="line">                        cx.<span class="title function_ invoke__">waker</span>().<span class="title function_ invoke__">clone</span>()</span><br><span class="line">                    );</span><br><span class="line">                    <span class="keyword">self</span>.registered = <span class="literal">true</span>;</span><br><span class="line">                &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                    <span class="comment">// 已注册但 Waker 可能变化，需要更新</span></span><br><span class="line">                    <span class="keyword">self</span>.<span class="title function_ invoke__">reactor</span>().<span class="title function_ invoke__">reregister</span>(</span><br><span class="line">                        <span class="keyword">self</span>.socket.<span class="title function_ invoke__">as_raw_fd</span>(), </span><br><span class="line">                        Interest::READ, </span><br><span class="line">                        cx.<span class="title function_ invoke__">waker</span>().<span class="title function_ invoke__">clone</span>()</span><br><span class="line">                    );</span><br><span class="line">                &#125;</span><br><span class="line">                Poll::Pending</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="title function_ invoke__">Err</span>(e) =&gt; Poll::<span class="title function_ invoke__">Ready</span>(<span class="title function_ invoke__">Err</span>(e)),</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>关键差异</strong>：</p>
+<ul>
+<li><strong>组合型</strong>：像导演，由编译器生成，关注流程控制（先做 A，再做 B）。通过 <code>enum</code> 记录当前执行到了哪一步。</li>
+<li><strong>叶子型</strong>：像工人，由开发者编写，关注具体功能实现。</li>
+</ul>
+<h2 id="Future-树与-Task-模型"><a href="#Future-树与-Task-模型" class="headerlink" title="Future 树与 Task 模型"></a>Future 树与 Task 模型</h2><h3 id="Future-的树状结构"><a href="#Future-的树状结构" class="headerlink" title="Future 的树状结构"></a>Future 的树状结构</h3><p>异步调用会形成自然的树状结构：</p>
+<figure class="highlight txt"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Task (根Future)</span><br><span class="line">├── async_fn1() 子Future</span><br><span class="line">│   └── async_fn2() 孙Future</span><br><span class="line">└── async_fn3() 子Future</span><br><span class="line">    └── async_fn4() 孙Future</span><br></pre></td></tr></table></figure>
+
+<h3 id="Task：调度的基本单位"><a href="#Task：调度的基本单位" class="headerlink" title="Task：调度的基本单位"></a>Task：调度的基本单位</h3><p><strong>Task</strong> 是执行调度的基本单元，包含完整的 Future 树：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">Task</span> &#123;</span><br><span class="line">    future: Pin&lt;<span class="type">Box</span>&lt;<span class="keyword">dyn</span> Future&lt;Output = ()&gt; + <span class="built_in">Send</span>&gt;&gt;, <span class="comment">// 根Future</span></span><br><span class="line">    id: TaskId,</span><br><span class="line">    state: TaskState,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">Executor</span> &#123;</span><br><span class="line">    ready_queue: VecDeque&lt;Task&gt;,      <span class="comment">// 就绪任务队列</span></span><br><span class="line">    waiting_tasks: HashMap&lt;TaskId, Task&gt;, <span class="comment">// 等待中的任务</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="Waker：唤醒-Task"><a href="#Waker：唤醒-Task" class="headerlink" title="Waker：唤醒 Task"></a>Waker：唤醒 Task</h2><h3 id="Waker-与-Task-的关联"><a href="#Waker-与-Task-的关联" class="headerlink" title="Waker 与 Task 的关联"></a>Waker 与 Task 的关联</h3><p><code>Future</code> 被 <code>poll</code> 时如果还没准备好（返回 <code>Pending</code>），它必须告诉 Executor：”等数据到了，记得叫醒我”。这就是 <strong>Waker</strong> 的作用。</p>
+<p>Waker 机制的核心是将<strong>具体事件</strong>与**顶层任务（Task）**关联。当底层 I&#x2F;O 就绪时，Waker 通知 Executor 将对应的 Task 重新加入就绪队列，Executor 随后再次 Poll 整个 Task（而不是只 Poll 某个子 Future）：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">TaskWaker</span> &#123;</span><br><span class="line">    task_id: TaskId,</span><br><span class="line">    executor: Arc&lt;Executor&gt;,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">impl</span> <span class="title class_">Wake</span> <span class="keyword">for</span> <span class="title class_">TaskWaker</span> &#123;</span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">wake</span>(<span class="keyword">self</span>: Arc&lt;<span class="keyword">Self</span>&gt;) &#123;</span><br><span class="line">        <span class="comment">// 唤醒的是整个 Task，而不是某个具体的 Future</span></span><br><span class="line">        <span class="keyword">self</span>.executor.<span class="title function_ invoke__">wake_task</span>(<span class="keyword">self</span>.task_id);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">impl</span> <span class="title class_">Executor</span> &#123;</span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">wake_task</span>(&amp;<span class="keyword">self</span>, task_id: TaskId) &#123;</span><br><span class="line">        <span class="comment">// 将对应的 Task 重新放入就绪队列</span></span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(task) = <span class="keyword">self</span>.waiting_tasks.<span class="title function_ invoke__">remove</span>(&amp;task_id) &#123;</span><br><span class="line">            <span class="keyword">self</span>.ready_queue.<span class="title function_ invoke__">push_back</span>(task);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="执行流程"><a href="#执行流程" class="headerlink" title="执行流程"></a>执行流程</h3><ol>
+<li><strong>Executor 调度</strong>：从就绪队列取出 Task，调用其根 Future 的 <code>poll()</code></li>
+<li><strong>递归 Polling</strong>：根 Future 的 <code>poll()</code> 会递归调用子 Future 的 <code>poll()</code></li>
+<li><strong>等待注册</strong>：如果叶子 Future 未就绪，它会存储 Waker 并返回 <code>Pending</code></li>
+<li><strong>事件触发</strong>：异步操作完成时调用 Waker 的 <code>wake()</code> 方法</li>
+<li><strong>重新调度</strong>：Waker 将对应的 Task 重新放入就绪队列</li>
+</ol>
+<h2 id="Executor-与-Reactor-协作模型"><a href="#Executor-与-Reactor-协作模型" class="headerlink" title="Executor 与 Reactor 协作模型"></a>Executor 与 Reactor 协作模型</h2><h3 id="整体架构：三层协作模型"><a href="#整体架构：三层协作模型" class="headerlink" title="整体架构：三层协作模型"></a>整体架构：三层协作模型</h3><figure class="highlight txt"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">┌────────────────────────────────────────────────────┐</span><br><span class="line">│                   Executor                         │</span><br><span class="line">│    ┌─────────────────────────────────────────┐     │</span><br><span class="line">│    │             Future (StateMachine)       │     │</span><br><span class="line">│    │  ┌─────────────┐ ┌─────────────┐        │     │</span><br><span class="line">│    │  │  SubFuture  │ │  SubFuture  │ ...    │     │</span><br><span class="line">│    │  └─────────────┘ └─────────────┘        │     │</span><br><span class="line">│    └─────────────────────────────────────────┘     │</span><br><span class="line">└────────────────────────────────────────────────────┘</span><br><span class="line">                          │</span><br><span class="line">┌────────────────────────────────────────────────────┐</span><br><span class="line">│                   Reactor                          │</span><br><span class="line">│    ┌────────────────────────────────────────────┐  │</span><br><span class="line">│    │       Event Multiplexing (epoll)           │  │</span><br><span class="line">│    │  ┌─────┐ ┌─────┐ ┌───────┐ ┌────────┐      │  │</span><br><span class="line">│    │  │ I/O │ │ I/O │ │ Timer │ │ Signal │ ...  │  │</span><br><span class="line">│    │  └─────┘ └─────┘ └───────┘ └────────┘      │  │</span><br><span class="line">│    └────────────────────────────────────────────┘  │</span><br><span class="line">└────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+
+<h2 id="核心组件深度解析"><a href="#核心组件深度解析" class="headerlink" title="核心组件深度解析"></a>核心组件深度解析</h2><h3 id="1-Reactor：事件驱动的引擎"><a href="#1-Reactor：事件驱动的引擎" class="headerlink" title="1. Reactor：事件驱动的引擎"></a>1. Reactor：事件驱动的引擎</h3><p>Reactor 负责监听所有异步 I&#x2F;O 事件，是整个系统的感知器官。在实际的 Tokio 实现中，Reactor 通常与 Executor 集成在同一个事件循环中运行：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Reactor 核心职责（简化示例）</span></span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">Reactor</span> &#123;</span><br><span class="line">    poll: mio::Poll,           <span class="comment">// 系统事件多路复用</span></span><br><span class="line">    events: mio::Events,       <span class="comment">// 就绪事件集合</span></span><br><span class="line">    waker_map: HashMap&lt;Token, Waker&gt;, <span class="comment">// Token 到 Waker 的映射</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">impl</span> <span class="title class_">Reactor</span> &#123;</span><br><span class="line">    <span class="comment">// 注意：在真实的 Tokio 中，这个方法通常不是独立循环</span></span><br><span class="line">    <span class="comment">// 而是集成在 Executor 的调度循环中</span></span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">poll_events</span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>, timeout: <span class="type">Option</span>&lt;Duration&gt;) &#123;</span><br><span class="line">        <span class="comment">// 等待事件就绪（可能阻塞）</span></span><br><span class="line">        <span class="keyword">self</span>.poll.<span class="title function_ invoke__">poll</span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>.events, timeout).<span class="title function_ invoke__">unwrap</span>();</span><br><span class="line">        </span><br><span class="line">        <span class="keyword">for</span> <span class="variable">event</span> <span class="keyword">in</span> &amp;<span class="keyword">self</span>.events &#123;</span><br><span class="line">            <span class="keyword">let</span> <span class="variable">token</span> = event.<span class="title function_ invoke__">token</span>();</span><br><span class="line">            </span><br><span class="line">            <span class="comment">// 查找对应的 Waker 并唤醒</span></span><br><span class="line">            <span class="comment">// 注意：remove 后如果事件再次触发，需要 Future 重新注册</span></span><br><span class="line">            <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(waker) = <span class="keyword">self</span>.waker_map.<span class="title function_ invoke__">remove</span>(&amp;token) &#123;</span><br><span class="line">                waker.<span class="title function_ invoke__">wake</span>();</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>关键要点</strong>：</p>
+<ul>
+<li><strong>Reactor 与 Executor 的协作</strong>：在单线程运行时中，Reactor 和 Executor 通常在同一个线程交替运行</li>
+<li><strong>事件注册的生命周期</strong>：Waker 被触发后从 map 中移除，需要 Future 在下次 poll 时重新注册</li>
+<li><strong>超时控制</strong>：可以设置超时避免无限期阻塞，让 Executor 有机会处理其他任务</li>
+</ul>
+<h3 id="2-Waker：连接-Reactor-与-Executor-的桥梁"><a href="#2-Waker：连接-Reactor-与-Executor-的桥梁" class="headerlink" title="2. Waker：连接 Reactor 与 Executor 的桥梁"></a>2. Waker：连接 Reactor 与 Executor 的桥梁</h3><p>Waker 是 Reactor 模式中回调机制的现代化身。它本质上是一个引用计数的智能指针，可以安全地跨线程传递和克隆：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">TaskWaker</span> &#123;</span><br><span class="line">    task_id: TaskId,</span><br><span class="line">    executor: Arc&lt;Executor&gt;,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">impl</span> <span class="title class_">Wake</span> <span class="keyword">for</span> <span class="title class_">TaskWaker</span> &#123;</span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">wake</span>(<span class="keyword">self</span>: Arc&lt;<span class="keyword">Self</span>&gt;) &#123;</span><br><span class="line">        <span class="comment">// 将 Task 重新加入调度队列</span></span><br><span class="line">        <span class="comment">// 注意：Waker 不直接持有 Reactor 引用</span></span><br><span class="line">        <span class="comment">// Reactor 注册逻辑在 Future::poll 中完成</span></span><br><span class="line">        <span class="keyword">self</span>.executor.<span class="title function_ invoke__">schedule</span>(<span class="keyword">self</span>.task_id);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>Waker 的关键特性</strong>：</p>
+<ul>
+<li><strong>可克隆</strong>：<code>cx.waker().clone()</code> 创建新的引用，不会复制底层数据</li>
+<li><strong>线程安全</strong>：可以在不同线程间传递（实现了 <code>Send</code> 和 <code>Sync</code>）</li>
+<li><strong>引用计数</strong>：底层使用 <code>Arc</code>，自动管理生命周期</li>
+</ul>
+<h3 id="3-Future-与-Reactor-的交互"><a href="#3-Future-与-Reactor-的交互" class="headerlink" title="3. Future 与 Reactor 的交互"></a>3. Future 与 Reactor 的交互</h3><p>前文提到的 <strong>叶子 Future</strong> 就是 Reactor 事件处理逻辑的载体。它连接了高级的 <code>await</code> 语法和底层的事件通知机制。</p>
+<h2 id="实际应用：Tokio-运行时架构"><a href="#实际应用：Tokio-运行时架构" class="headerlink" title="实际应用：Tokio 运行时架构"></a>实际应用：Tokio 运行时架构</h2><p>Tokio 是 Rust 最流行的异步运行时，完美体现了这种架构：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#[tokio::main]</span></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">fn</span> <span class="title function_">main</span>() &#123;</span><br><span class="line">    <span class="comment">// 背后启动完整的 Reactor + Executor 基础设施</span></span><br><span class="line">    <span class="keyword">let</span> <span class="variable">response</span> = reqwest::<span class="title function_ invoke__">get</span>(<span class="string">&quot;https://example.com&quot;</span>).<span class="keyword">await</span>.<span class="title function_ invoke__">unwrap</span>();</span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">&quot;Status: &#123;&#125;&quot;</span>, response.<span class="title function_ invoke__">status</span>());</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>Tokio 组件分解</strong>：</p>
+<ul>
+<li><strong>Reactor</strong>: 基于 mio 的事件循环</li>
+<li><strong>Executor</strong>: 工作窃取线程池</li>
+<li><strong>Timer</strong>: 异步定时器组件</li>
+<li><strong>I&#x2F;O Driver</strong>: 统一 I&#x2F;O 事件处理</li>
+</ul>
+<h2 id="与-Go-Node-js-的对比"><a href="#与-Go-Node-js-的对比" class="headerlink" title="与 Go&#x2F;Node.js 的对比"></a>与 Go&#x2F;Node.js 的对比</h2><p>为什么 Rust 需要我们显式引入 Executor（如 Tokio），而 Go 和 Node.js 似乎”没有”这个概念？</p>
+<ul>
+<li><p><strong>Go&#x2F;Node.js</strong>：Runtime 内置了复杂的调度器（Executor）、事件循环（Reactor）甚至垃圾回收（GC）。</p>
+<ul>
+<li><strong>优点</strong>：开箱即用，开发体验统一。</li>
+<li><strong>缺点</strong>：运行时体积大，难以裁剪。在内存受限的环境中，很可能无法使用或消耗太多资源。</li>
+<li><strong>看起来”没有”Executor</strong>：其实是<strong>内置</strong>了且不可替换，用户感知不到。</li>
+</ul>
+</li>
+<li><p><strong>Rust</strong>：标准库只定义了 <code>Future</code> <strong>接口</strong>（Trait），不包含具体的<strong>实现</strong>（Executor&#x2F;Reactor）。</p>
+<ul>
+<li><strong>优点</strong>：不绑定任何并发编程模型。不需要异步时就没有运行时开销；在嵌入式环境可以用极简的 Executor；在服务器环境可以用更复杂的 Tokio。</li>
+<li><strong>缺点</strong>：需要感知 Executor 增加理解学习成本。需要显式编写相关代码。</li>
+<li><strong>显式引入 Executor</strong>：因为标准库没提供，所以必须引入第三方实现（如 Tokio）。</li>
+</ul>
+</li>
+</ul>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>Rust 的异步模型其实就是把 <strong>Reactor 模式</strong> 和 <strong>编译时状态机</strong> 结合在了一起：</p>
+<ol>
+<li><strong>写起来像同步</strong>：<code>async/.await</code> 语法让我们不用写回调。</li>
+<li><strong>跑起来是状态机</strong>：编译器把代码转换成高效的状态机。</li>
+<li><strong>底层还是 Reactor</strong>：依靠 epoll&#x2F;kqueue 等系统调用来驱动事件。</li>
+</ol>
+<p>理解这个架构，能帮你更好地理解为什么 Rust 的 Future 需要 <code>poll</code>，为什么需要 <code>Executor</code>，以及为什么在 Rust 里你甚至可以自己写一个 Runtime。</p>
+<h2 id="补充说明"><a href="#补充说明" class="headerlink" title="补充说明"></a>补充说明</h2><h3 id="关于代码示例"><a href="#关于代码示例" class="headerlink" title="关于代码示例"></a>关于代码示例</h3><p>本文中的代码示例都是<strong>简化的概念性代码</strong>，目的是帮助理解核心机制。实际生产代码需要处理更多细节：</p>
+<ul>
+<li><strong>Pin 的处理</strong>：真实代码需要正确处理 <code>Pin</code> 投影，通常使用 <code>pin-project</code> 等库</li>
+<li><strong>错误处理</strong>：需要妥善处理各种错误情况</li>
+<li><strong>性能优化</strong>：真实 Runtime 会有更多优化，如批量处理、工作窃取等</li>
+<li><strong>并发安全</strong>：多线程环境下需要考虑同步问题</li>
+</ul>
+<h3 id="Pin-为什么必要？"><a href="#Pin-为什么必要？" class="headerlink" title="Pin 为什么必要？"></a>Pin 为什么必要？</h3><p><code>Future</code> 需要 <code>Pin</code> 的核心原因是<strong>自引用结构</strong>：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// async fn 生成的状态机可能包含自引用</span></span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">SelfReferentialFuture</span> &#123;</span><br><span class="line">    data: <span class="type">String</span>,</span><br><span class="line">    ptr: *<span class="keyword">const</span> <span class="type">String</span>,  <span class="comment">// 指向 self.data</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果这个结构体被移动到新的内存地址，<code>ptr</code> 就会失效。<code>Pin</code> 保证了被 pin 住的值不会再被移动，使得自引用结构安全可用。</p>
+<h3 id="Executor-的类型"><a href="#Executor-的类型" class="headerlink" title="Executor 的类型"></a>Executor 的类型</h3><p>不同场景需要不同的 Executor：</p>
+<ul>
+<li><strong>单线程 Executor</strong>：适合嵌入式或简单场景，开销小</li>
+<li><strong>多线程 Executor</strong>：如 Tokio 的工作窃取线程池，适合高并发服务器</li>
+<li><strong>自定义 Executor</strong>：可以根据特定需求定制调度策略</li>
+</ul>
+<p>Rust 的设计允许你根据实际需求选择最合适的 Runtime，而不是被强制使用统一的实现。</p>
+<hr>
+<p><a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/tree/master/langs/rust/rust-asyncawait.md" >查看源文件</a>&nbsp;&nbsp;<a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/edit/master/langs/rust/rust-asyncawait.md">编辑源文件</a></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>liuyanjie
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://blog.butonly.com/posts/langs/rust/rust-asyncawait/" title="深入理解 Rust async&#x2F;.await 实现原理">https://blog.butonly.com/posts/langs/rust/rust-asyncawait/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/rust/" rel="tag"># rust</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/posts/langs/rust/rust-lifecycle/" rel="prev" title="深入理解 Rust 生命周期">
+                  <i class="fa fa-angle-left"></i> 深入理解 Rust 生命周期
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    
+  <div class="comments" id="disqus_thread">
+    <noscript>Please enable JavaScript to view the comments powered by Disqus.</noscript>
+  </div>
+  
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2018 – 
+    <span itemprop="copyrightYear">2025</span>
+    <span class="with-love">
+      <i class="heartbeat"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">liuyanjie</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">166k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:31</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+  <a href="https://github.com/c-cc-cc" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+<script class="next-config" data-name="disqus" type="application/json">{"enable":true,"shortname":"liuyanjie","count":true,"lazyload":true,"i18n":{"disqus":"disqus"}}</script>
+<script src="/js/third-party/comments/disqus.js" defer></script>
+
+</body>
+</html>

@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)"><meta name="generator" content="Hexo 8.1.1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png">
+  <link rel="mask-icon" href="/favicon.png" color="#222">
+  <link rel="manifest" href="/manifest.json">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.css" integrity="sha256-gkQVf8UKZgQ0HyuxL/VnacadJ+D2Kox2TCEBuNQg5+w=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"blog.butonly.com","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.26.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"tomorrow-night-bright"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":true,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":true,"pangu":true,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"algolia":{"appID":"FRAAR0AUP0","apiKey":"459ace1d7f5aabfa15b4f89baba340b3","indexName":"blog.butonly.com","hits":{"per_page":10}}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="简介libuv 是一个专注于异步I&#x2F;O的跨平台的程序库，它主要是用于支持 Node.js，但是也被如 Luvit、Julia、pyuv 等很多其他的库使用。它使得 异步I&#x2F;O 变的简单。 libuv 对于经常接触 c 语言程序开发的开发人员来说，应该是非常容易的，但是对于没有没有相关经验的开发人员来说，阅读源码就比较吃力了，但是如果能阅读并理解 libuv，才能更深入的了解 N">
+<meta property="og:type" content="article">
+<meta property="og:title" content="libuv源码分析（一）全局概览（Overview）">
+<meta property="og:url" content="https://blog.butonly.com/posts/node.js/libuv/1-libuv-overview/index.html">
+<meta property="og:site_name" content="liuyanjie&#39;s blog">
+<meta property="og:description" content="简介libuv 是一个专注于异步I&#x2F;O的跨平台的程序库，它主要是用于支持 Node.js，但是也被如 Luvit、Julia、pyuv 等很多其他的库使用。它使得 异步I&#x2F;O 变的简单。 libuv 对于经常接触 c 语言程序开发的开发人员来说，应该是非常容易的，但是对于没有没有相关经验的开发人员来说，阅读源码就比较吃力了，但是如果能阅读并理解 libuv，才能更深入的了解 N">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://docs.libuv.org/en/v1.x/_images/architecture.png">
+<meta property="og:image" content="http://docs.libuv.org/en/v1.x/_images/loop_iteration.png">
+<meta property="og:image" content="https://i3.wp.com/upload-images.jianshu.io/upload_images/5618238-eaf3e05931531d7e.png">
+<meta property="og:image" content="https://cdn-images-1.medium.com/max/1600/0*XTYvSNj_rT2UZwfm.png">
+<meta property="article:published_time" content="2019-04-23T07:00:01.000Z">
+<meta property="article:modified_time" content="2021-05-08T08:18:19.513Z">
+<meta property="article:author" content="liuyanjie">
+<meta property="article:tag" content="eventloop">
+<meta property="article:tag" content="libuv">
+<meta property="article:tag" content="node.js">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://docs.libuv.org/en/v1.x/_images/architecture.png">
+
+
+<link rel="canonical" href="https://blog.butonly.com/posts/node.js/libuv/1-libuv-overview/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://blog.butonly.com/posts/node.js/libuv/1-libuv-overview/","path":"posts/node.js/libuv/1-libuv-overview/","title":"libuv源码分析（一）全局概览（Overview）"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>libuv源码分析（一）全局概览（Overview） | liuyanjie's blog</title>
+  
+    <script async src="https://www.googletagmanager.com/gtag/js?id=014348069229275019795:-z92dm0sjiy"></script>
+  <script class="next-config" data-name="google_analytics" type="application/json">{"tracking_id":"014348069229275019795:-z92dm0sjiy","only_pageview":false,"measure_protocol_api_secret":null}</script>
+  <script src="/js/third-party/analytics/google-analytics.js" defer></script>
+
+  <script src="/js/third-party/analytics/baidu-analytics.js" defer></script>
+  <script async src="https://hm.baidu.com/hm.js?4cd57e104d0d9f5862dd91d0acdb9eee"></script>
+
+
+
+
+
+
+
+  
+  <script size="300" alpha="0.6" zIndex="-1" src="https://cdn.jsdelivr.net/npm/ribbon.js@1.0.2/dist/ribbon.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.31/dist/fancybox/fancybox.umd.js" integrity="sha256-a+H7FYzJv6oU2hfsfDGM2Ohw/cR9v+hPfxHCLdmCrE8=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/lozad@1.16.0/dist/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/pangu@7.2.0/dist/browser/pangu.umd.js" integrity="sha256-JnmRRnJK7DC6RQJbAJb6AXOM9OmWzS6z8eYultk/48Y=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script><script src="/js/bookmark.js" defer></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/algoliasearch@5.36.0/dist/lite/builds/browser.umd.js" integrity="sha256-o49zoHLDPBm9WLg6AiliAVi3axCRTqe3ltTxLvhzAVg=" crossorigin="anonymous" defer></script><script src="/js/third-party/search/algolia-search.js" defer></script>
+
+  <script class="next-config" data-name="pdf" type="application/json">{"object_url":{"url":"https://cdn.jsdelivr.net/npm/pdfobject@2.3.1/pdfobject.min.js","integrity":"sha256-jI72I8ZLVflVOisZIOaLvRew3tyvzeu6aZXFm7P7dEo="},"url":"/lib/pdf/web/viewer.html"}</script>
+  <script src="/js/third-party/tags/pdf.js" defer></script>
+
+  <script class="next-config" data-name="mermaid" type="application/json">{"enable":true,"theme":"forest","js":{"url":"https://cdn.jsdelivr.net/npm/mermaid@11.10.1/dist/mermaid.min.js","integrity":"sha256-BmQmdWDS8X2OTbrwELWK366LV6escyWhHHe0XCTU/Hk="}}</script>
+  <script src="/js/third-party/tags/mermaid.js" defer></script>
+
+
+  <script src="/js/third-party/fancybox.js" defer></script>
+
+
+
+  
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+<link rel="alternate" href="/atom.xml" title="liuyanjie's blog" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">liuyanjie's blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <img class="custom-logo-image" src="/logo.png" alt="liuyanjie's blog">
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="home fa-fw"></i>首页</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">6</span></a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+      <div class="search-header">
+        <span class="search-icon">
+          <i class="fa fa-search"></i>
+        </span>
+        <div class="search-input-container">
+          <input autocomplete="off" autocapitalize="off" maxlength="80"
+                placeholder="搜索..." spellcheck="false"
+                type="search" class="search-input">
+        </div>
+        <span class="popup-btn-close" role="button">
+          <i class="fa fa-times-circle"></i>
+        </span>
+      </div>
+      <div class="search-result-container">
+        <div class="search-result-icon">
+          <i class="fab fa-algolia fa-5x"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text">简介</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9F%BA%E7%A1%80%E8%A6%81%E6%B1%82"><span class="nav-number">2.</span> <span class="nav-text">基础要求</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AE%BE%E8%AE%A1%E6%A6%82%E8%BF%B0"><span class="nav-number">3.</span> <span class="nav-text">设计概述</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Handles-and-requests"><span class="nav-number">3.1.</span> <span class="nav-text">Handles and requests</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#The-I-O-loop"><span class="nav-number">3.2.</span> <span class="nav-text">The I&#x2F;O loop</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#File-I-O"><span class="nav-number">3.3.</span> <span class="nav-text">File I&#x2F;O</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reactor%E6%A8%A1%E5%BC%8F"><span class="nav-number">4.</span> <span class="nav-text">Reactor模式</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#libevent-vs-libev-vs-libuv"><span class="nav-number">5.</span> <span class="nav-text">libevent vs libev vs libuv</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%BA%90%E7%A0%81"><span class="nav-number">6.</span> <span class="nav-text">源码</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%89%88%E6%9C%AC"><span class="nav-number">6.1.</span> <span class="nav-text">版本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9B%AE%E5%BD%95%E7%BB%93%E6%9E%84"><span class="nav-number">6.2.</span> <span class="nav-text">目录结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%91%BD%E5%90%8D%E9%A3%8E%E6%A0%BC"><span class="nav-number">6.3.</span> <span class="nav-text">命名风格</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84"><span class="nav-number">6.4.</span> <span class="nav-text">数据结构</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="liuyanjie"
+      src="/avatar.png">
+  <p class="site-author-name" itemprop="name">liuyanjie</p>
+  <div class="site-description" itemprop="description">KISS DRY</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">13</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/liuyanjie" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;liuyanjie" rel="noopener me" target="_blank"><i class="github fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="/liuyj619@gmail.com" title="E-Mail → liuyj619@gmail.com" rel="noopener me"><i class="envelope fa-fw"></i></a>
+      </span>
+  </div>
+  <div class="cc-license animated" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="https://cdn.jsdelivr.net/npm/@creativecommons/vocabulary@2020.11.3/assets/license_badges/small/by_nc_sa.svg" alt="Creative Commons"></a>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://blog.butonly.com/posts/node.js/libuv/1-libuv-overview/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/avatar.png">
+      <meta itemprop="name" content="liuyanjie">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liuyanjie's blog">
+      <meta itemprop="description" content="KISS DRY">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="libuv源码分析（一）全局概览（Overview） | liuyanjie's blog">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          libuv源码分析（一）全局概览（Overview）
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2019-04-23 15:00:01" itemprop="dateCreated datePublished" datetime="2019-04-23T15:00:01+08:00">2019-04-23</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2021-05-08 16:18:19" itemprop="dateModified" datetime="2021-05-08T16:18:19+08:00">2021-05-08</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" itemprop="url" rel="index"><span itemprop="name">源码分析</span></a>
+        </span>
+    </span>
+
+  
+  
+  <span class="post-meta-item">
+    
+      <span class="post-meta-item-icon">
+        <i class="far fa-comment"></i>
+      </span>
+      <span class="post-meta-item-text">Disqus：</span>
+    
+    <a title="disqus" href="/posts/node.js/libuv/1-libuv-overview/#disqus_thread" itemprop="discussionUrl">
+      <span class="post-comments-count disqus-comment-count" data-disqus-identifier="posts/node.js/libuv/1-libuv-overview/" itemprop="commentCount"></span>
+    </a>
+  </span>
+  
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>8.3k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>8 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><h2 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h2><p>libuv 是一个专注于异步I&#x2F;O的跨平台的程序库，它主要是用于支持 Node.js，但是也被如 Luvit、Julia、pyuv 等很多其他的库使用。它使得 异步I&#x2F;O 变的简单。</p>
+<p>libuv 对于经常接触 <code>c</code> 语言程序开发的开发人员来说，应该是非常容易的，但是对于没有没有相关经验的开发人员来说，阅读源码就比较吃力了，但是如果能阅读并理解 <code>libuv</code>，才能更深入的了解 <code>Node.js</code> 是怎样工作的，以及 <code>Node.js</code> 中的事件驱动、非阻塞异步I&#x2F;O是怎么一回事儿，它是怎么解决这些问题的，它有哪些不足。</p>
+<h2 id="基础要求"><a href="#基础要求" class="headerlink" title="基础要求"></a>基础要求</h2><p>阅读源代码需要 <code>c</code> 语言相关的知识和一定的系统编程基础，需要了解常见的系统API调用及相关机制。主要有以下几个方面：</p>
+<ol>
+<li>libuv 主要是用 <code>c</code> 实现的，所以需要有一定的 <code>c</code> 语言基础，尤其是宏、结构体、指针、函数指针、数组等内容，对 <code>c</code> 语言程序的内存布局有一定了解；</li>
+<li>libuv 内部包含 <code>堆</code> <code>队列</code> <code>树</code> 等基础的数据结构，需要有一定的了解；</li>
+<li>libuv 内部使用了很多系统API，所以需要对相应系统平台系统编程和操作系统原理有一定了解，了解进程、线程、文件系统、网络等，了解常见的异步IO模型，最好阅读过 <code>APUE</code>。</li>
+</ol>
+<p>libuv 内部实现采用的大量的<code>宏</code>来复用代码，并配合使用强制类型转换等机制实现类似于高级语言中继承的效果，这依赖于 <code>c</code> 语言结构体内存布局，<code>宏</code>本身是非常不容易阅读的，增加了阅读源代码的难度。同时内部进行一定的抽象，需要一定的理解能力。</p>
+<p>libuv 支持多个平台，尤其是支持 <code>*nix</code> 和 <code>win</code> 两种设计实现差异很大的操作系统，其内部也大量使用宏进行条件编译，且部分功能在不同环境下的实现有可能完全不同，所以在阅读源码时只关注某一平台代码。本源码分析也仅针对 <code>linux</code> 环境的相关代码的分析。</p>
+<h2 id="设计概述"><a href="#设计概述" class="headerlink" title="设计概述"></a>设计概述</h2><p>本部分内容主要来源于官方文档，建议对照官方文档 <a target="_blank" rel="noopener" href="http://docs.libuv.org/en/v1.x/design.html">Design overview</a> 阅读。</p>
+<p>libuv 最初是为 NodeJS 编写的跨平台支持库。它是围绕<code>事件驱动的异步I/O模型</code>设计的。提到异步非阻塞I&#x2F;O模型，有经验的开发人员应该能很快意识到这是一种很常见的实现高并发的模型，这是一种不同于多进程&#x2F;多线程的并发模型。并发模型可以参考知乎专栏<a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/44917920">并发模型之间的比较</a>或其他资料。</p>
+<p>libuv 不仅仅在多种不同I&#x2F;O轮询机制之上提供了的简单抽象——I&#x2F;O观察者，更通过 <code>handles</code> 和 <code>streams</code> 为套接字和其他实体提供了更高级别的抽象，同时也提供了跨平台I&#x2F;O和线程管理能力，还包含一些其他功能。</p>
+<p>下图说明了 libuv 的不同组成部分以及它们与哪些子系统相关：</p>
+<p><img data-src="http://docs.libuv.org/en/v1.x/_images/architecture.png" alt="architecture"></p>
+<p>从图中可以看到，libuv 主要部分都是和I&#x2F;O相关的，主要包括网络I&#x2F;O和文件I&#x2F;O，其中文件I&#x2F;O和其他少部分功能基于线程池实现，网络I&#x2F;O在 <code>*nix</code> 平台基于 <code>uv__io_t</code>（内部抽象的I&#x2F;O观察者）实现，<code>uv__io_t</code> 又基于不同环境采用了不同的底层机制，网络I&#x2F;O在 <code>win</code> 平台基于 <code>IOCP</code> 机制实现。</p>
+<h3 id="Handles-and-requests"><a href="#Handles-and-requests" class="headerlink" title="Handles and requests"></a>Handles and requests</h3><p>libuv 为用户提供了两个与实践循环结合使用的抽象：<code>handles</code> 和 <code>requests</code></p>
+<p><code>Handles</code> 代表长生命周期的<code>对象</code>有能力执行某些操作当它们处于激活状态下。例如：</p>
+<ul>
+<li><code>prepare handle</code> 在激活时，每次事件循环迭代都会调用一次它的回调；</li>
+<li><code>TCP server handle</code> 在每一次有一个新的 <code>connection</code> 进来的时候都会调用一次它的回调。</li>
+</ul>
+<p><code>Requests</code> 一般代表一个短生命周期的<code>操作</code>。这些操作可以通过 handle 执行：<code>write requests</code> 用于在 handle 上写数据，所以 <code>request</code> 和 <code>handle</code> 可能存在一定的数据关联；或者也可以独立执行：<code>getaddrinfo requests</code> 不需要一个 <code>handle</code>，他们直接运行在事件循环中。</p>
+<p>相关的代码分析在<a href="/posts/node.js/libuv/3-libuv-handle-and-request">Handle and Requst</a> 部分进行。</p>
+<h3 id="The-I-O-loop"><a href="#The-I-O-loop" class="headerlink" title="The I&#x2F;O loop"></a>The I&#x2F;O loop</h3><p>I&#x2F;O loop 也就是事件循环（Event Loop）是 libuv 的核心组成部分。它为所有 I&#x2F;O 操作建立内容，实际上这意味着事件循环被绑定到一个单一的线程。可以运行多个不同的事件循环只要它们在不同的线程中。除非另有说明，事件循环（任何涉及事件循环和 handle 的API）并不是线程安全的。</p>
+<p>所有的异步操作的结果最终在事件循环中被处理，也就是通常所说的回调函数，在事件循环中被调用。因为事件循环线程是单线程模式，所以所有用户代码都在一个线程中运行，libuv 更像是一个调度器，在合适的时候调度用户代码运行。此时，如果用户代码CPU密集型的耗时运算，将会阻塞事件循环。</p>
+<p>事件循环是非常常见的单线程异步I&#x2F;O的处理方法：所有（网络）I&#x2F;O都在非阻塞的套接字上执行，这些套接字使用给定平台上可用的最佳机制进行轮询：Linux 上使用 <code>epoll</code>，OSX 和其他 BSDs 系统上使用 <code>kqueue</code>，SunOS 使用 <code>event ports</code>，Windows 上使用 <code>IOCP</code>。以上I&#x2F;O轮询作为事件循环迭代的一部分，事件循环将会被阻塞在I&#x2F;O轮询（例如：linux 上的 <code>epoll_pwait</code> 调用），直到被添加到轮询器中的套接字有IO活动（事件），事件循环线程将会在有IO事件时被唤醒，关联的回调函数将会被调用表明套接字有新的连接，然后便可以在 <code>handles</code> 上进行读、写或其他想要进行的操作 <code>requests</code>。</p>
+<p>下图显示了事件循环的所有阶段：</p>
+<p><img data-src="http://docs.libuv.org/en/v1.x/_images/loop_iteration.png" alt="loop_iteration"></p>
+<p>图中主要有七个阶段，</p>
+<p>其中 <code>idle</code>、<code>prepare</code>、<code>check</code> 的实现完全相同，调用时间不同，类似于生命周期勾子，这几个阶段目的是允许开发者在事件循环的特定阶段执行代码，在 Node.js 主要用于性能信息收集。这三个阶段的实现代码比较简单，很容易理解。因源代码几乎完全使用宏实现，所以编辑器无法跳转到对应实现，搜索关键字也无法匹配，这里给出源文件路径：<code>src/unix/loop-watcher.c</code>，便于读者找到源文件。</p>
+<p>其余剩下的阶段就主要有 <code>Call pending callbacks</code> <code>Poll for I/O</code> <code>Call close callbacks</code>，这三个阶段主要用于处理IO操作等异步操作结果，阅读源码也主要是围绕着这三个阶段的代码展开的。</p>
+<p>各阶段用途描述：</p>
+<ol>
+<li>Run due timers：处理定时任务；</li>
+<li>Call pending callbacks：处理上一轮事件循环中因出现错误或者逻辑需要等原因挂起的任务；</li>
+<li>Run idle handles；</li>
+<li>Run prepare handles；</li>
+<li>Poll for I&#x2F;O：事件循环 则有可能 因为 <code>epoll_wait</code> 而阻塞在这里，这取决于 <code>timeout</code> 参数是否为 <code>0</code>，但是通常情况下，会阻塞到有关注的IO事件发送时回，这也直接避免了时间循环一直工作导致占用CPU的问题。这个阶段是整个 libuv 事件循环最重要的阶段。libuv 的大部分 <code>handle</code> （都是I&#x2F;O相关的）都依赖该阶段实现。</li>
+<li>Run check handles：</li>
+<li>Call close callbacks：清理被关闭的 <code>handles</code>。</li>
+</ol>
+<p>更多详细描述，请直接阅读<a target="_blank" rel="noopener" href="http://docs.libuv.org/en/v1.x/design.html#the-i-o-loop">The I&#x2F;O loop</a>的详细描述。</p>
+<p>相关的代码分析在<a href="/posts/node.js/libuv/2-libuv-event-loop">EventLoop</a> 部分进行。</p>
+<h3 id="File-I-O"><a href="#File-I-O" class="headerlink" title="File I&#x2F;O"></a>File I&#x2F;O</h3><p>不同于网络IO，目前没有 libuv 可以依赖的平台特定（异步）文件IO机制，所以当前的方式是在线程池中运行阻塞式的文件IO操作。</p>
+<p>libuv 目前采用一个全局的线程池，所有事件循环都可以在向其任务队列提交任务，目前有3种类型的操作运行在线程中：</p>
+<ul>
+<li>文件系统操作：<code>read</code>、<code>write</code> …</li>
+<li>DNS功能操作：<code>getaddrinfo</code> 和 <code>getnameinfo</code></li>
+<li>通过 <code>uv_queue_work()</code> 提交的用户特定的任务</li>
+</ul>
+<p>有关跨平台文件I&#x2F;O现状的详尽说明：<a target="_blank" rel="noopener" href="https://blog.libtorrent.org/2012/10/asynchronous-disk-io/">asynchronous disk I&#x2F;O</a></p>
+<p>线程池中的线程在工作完成之后，会向事件循环线程发送数据，然后再主线程中触发回调。</p>
+<h2 id="Reactor模式"><a href="#Reactor模式" class="headerlink" title="Reactor模式"></a>Reactor模式</h2><p>通过以上的介绍和描述，我们可以获知几个关键概念：<code>Event-Loop</code>、<code>Async I/O</code>, <code>Handle</code>、<code>Request</code>。</p>
+<ul>
+<li><code>Event-Loop</code> 是一个程序结构，用于在程序中 <code>等待</code> 并 <code>派发</code> 消息和事件。它实际是一个运行时概念，表示一个运行时逻辑。<code>Event-Loop</code> 是实现 <code>Event-Driven</code> 编程的基本结构。</li>
+<li><code>Async I/O</code> 相比 <code>Sync I/O</code>，<code>Async I/O</code> 一个典型的特征是不会阻塞，因为I&#x2F;O操作通常比较慢，同步I&#x2F;O操作会导致程序阻塞在I&#x2F;O操作上，进而导致程序响应很慢。<code>Async I/O</code> 就是为了避免阻塞的。</li>
+</ul>
+<p><code>Event-Loop</code> 和 <code>Async I/O</code> 是实现高性能I&#x2F;O的常见手段，这些都始于 <code>C10k</code> 问题，单服务器同时服务 10000 个客户端，当然现在远不止这些了。早期的服务器是基于进程&#x2F;线程模型，每新来一个连接，就分配一个进程（线程）去处理这个连接，这是一个非常大的开销，容易达到系统软硬件瓶颈，另外，进程&#x2F;线程切换上下文的成本也非常高。</p>
+<p>一般而言，大多数网络应用服务器端软件都是I&#x2F;O密集型系统，服务器系统大部分的时间都花费在等待数据的输入输出上了，而不是计算，如果CPU把时间花在等待I&#x2F;O操作上，就白白浪费了CPU的处理能力了，更重要的是，此时可能还有大量的客户端请求需要处理，而CPU却在等待I&#x2F;O无法脱身。最终，以此方式工作的服务器吞吐量极低，需要更多的服务支撑业务，导致成本升高。</p>
+<p>为了充分利用CPU的计算能力，就需要避免让CPU等待I&#x2F;O操作完成能够抽出身来做其他工作，例如，接收更多请求，等I&#x2F;O操作完成之后再来进一步处理。这就有了 非阻塞I&#x2F;O。异步I&#x2F;O给编程带来了一定的麻烦，因为同步思维对于人来说更自然、更容易，也不易于调试，但是实际上限时世界原本偏向异步的。如何在I&#x2F;O操作完成后能够让CPU回来继续完成工作也需要更复杂的流程逻辑控制，这些都带来了一定的设计难度。不过幸好，聪明的开发者设计了 <code>Event-Driven</code> 编程模型解决了此问题。基于此模型，也衍生出高性能IO常见实现模式：<code>Reactor</code> 模式，该模式有很多变体。Redis、Nginx、Netty、java.NIO都采用类似的模式来解决高并发的问题，libuv 自然也不例外，实现了事件驱动的异步IO。<code>Reactor</code> 模式采用同步I&#x2F;O，<code>Proactor</code> 是一个采用异步I&#x2F;O的模式。</p>
+<p><img data-src="https://i3.wp.com/upload-images.jianshu.io/upload_images/5618238-eaf3e05931531d7e.png"></p>
+<p>该部分内容参考：</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Event-driven">https://en.wikipedia.org/wiki/Event-driven</a></li>
+<li><a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Event-driven_programming">https://en.wikipedia.org/wiki/Event-driven_programming</a></li>
+<li><a target="_blank" rel="noopener" href="https://medium.com/@tigranbs/concurrency-vs-event-loop-vs-event-loop-concurrency-eb542ad4067b">https://medium.com/@tigranbs/concurrency-vs-event-loop-vs-event-loop-concurrency-eb542ad4067b</a></li>
+<li><a target="_blank" rel="noopener" href="http://www.kegel.com/c10k.html">http://www.kegel.com/c10k.html</a></li>
+<li><a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Reactor_pattern">https://en.wikipedia.org/wiki/Reactor_pattern</a></li>
+<li><a target="_blank" rel="noopener" href="http://gee.cs.oswego.edu/dl/cpjslides/nio.pdf">http://gee.cs.oswego.edu/dl/cpjslides/nio.pdf</a></li>
+<li><a target="_blank" rel="noopener" href="http://www.laputan.org/pub/sag/reactor.pdf">http://www.laputan.org/pub/sag/reactor.pdf</a></li>
+<li><a target="_blank" rel="noopener" href="http://www.dre.vanderbilt.edu/~schmidt/PDF/reactor-siemens.pdf">http://www.dre.vanderbilt.edu/~schmidt/PDF/reactor-siemens.pdf</a></li>
+<li><a target="_blank" rel="noopener" href="https://java-design-patterns.com/patterns/reactor/">https://java-design-patterns.com/patterns/reactor/</a></li>
+<li><a target="_blank" rel="noopener" href="http://www.linkedkeeper.com/132.html">高性能Server - Reactor模型</a></li>
+<li><a target="_blank" rel="noopener" href="https://blog.fangweb.com/2018/09/10/%E7%90%86%E8%A7%A3%E9%AB%98%E6%80%A7%E8%83%BD%E7%BD%91%E7%BB%9C%E6%A8%A1%E5%9E%8B/zh-cn/">理解高性能网络模型</a></li>
+</ul>
+<h2 id="libevent-vs-libev-vs-libuv"><a href="#libevent-vs-libev-vs-libuv" class="headerlink" title="libevent vs libev vs libuv"></a>libevent vs libev vs libuv</h2><ul>
+<li>libevent：名气最大，应用最广泛，历史悠久的跨平台事件库；</li>
+<li>libev：较 libevent 而言，设计更简练，性能更好，但对 Windows 支持不够好；</li>
+<li>libuv：开发 node 的过程中需要一个跨平台的事件库，他们首选了 libev，但又要支持 Windows，故重新封装了一套，linux 下用 libev 实现，Windows下用 IOCP 实现；</li>
+</ul>
+<p>libevent、libev、libuv 都是 c 语言实现的事件驱动（<code>Event-Driven</code>）的异步I&#x2F;O（<code>Async I/O</code>）库。</p>
+<p>异步I&#x2F;O（<code>Async I/O</code>）库本质上是提供异步I&#x2F;O事件通知（Asynchronous Event Notification，AEN）的。异步事件通知机制就是根据发生的事件，调用相应的回调函数进行处理。</p>
+<ul>
+<li><strong>事件（Event）</strong>：事件是通知机制的核心，比如I&#x2F;O事件、定时器事件、信号事件事件。有时候也称事件为事件处理器（EventHandler），这个名称更形象，因为 Handler 本身表示了包含处理所需数据（或数据的地址）和处理的方法（回调函数），更像是面向对象思想中的称谓。</li>
+<li><strong>事件循环（EventLoop）</strong>：是事件驱动（<code>Event-Driven</code>）的核心，等待并分发事件。事件循环用于管理事件。</li>
+</ul>
+<p>对于应用程序来说，这些只是异步事件库提供的API，封装了异步事件库跟操作系统的交互，异步事件库会选择一种操作系统提供的机制来实现某一种事件，比如利用 Unix&#x2F;Linux 平台的 epoll 机制实现网络IO事件，在同时存在多种机制可以利用时，异步事件库会采用最优机制。</p>
+<p>该部分内容参考：</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://blog.csdn.net/lijinqi1987/article/details/71214974">网络库libevent、libev、libuv对比</a></li>
+<li><a target="_blank" rel="noopener" href="http://zheolong.github.io/blog/libevent-libev-libuv/">Libevent Libev Libuv …</a></li>
+<li><a target="_blank" rel="noopener" href="https://stackoverflow.com/questions/9433864/whats-the-difference-between-libev-and-libevent">whats-the-difference-between-libev-and-libevent</a></li>
+</ul>
+<h2 id="源码"><a href="#源码" class="headerlink" title="源码"></a>源码</h2><h3 id="版本"><a href="#版本" class="headerlink" title="版本"></a>版本</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ git checkout v1.<span class="number">28.0</span></span><br><span class="line">Previous HEAD position was a4fc9a66 <span class="number">2019.03</span>.<span class="number">17</span>, Version <span class="number">1.27</span>.<span class="number">0</span> (Stable)</span><br><span class="line">HEAD is now at <span class="number">7b</span>f8fabf <span class="number">2019.04</span>.<span class="number">16</span>, Version <span class="number">1.28</span>.<span class="number">0</span> (Stable)</span><br></pre></td></tr></table></figure>
+
+<h3 id="目录结构"><a href="#目录结构" class="headerlink" title="目录结构"></a>目录结构</h3><p>以下为源码的文件结构，删掉了无关的部分</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line">$ tree</span><br><span class="line">.</span><br><span class="line">├── README.md</span><br><span class="line">├── docs/</span><br><span class="line">├── include</span><br><span class="line">│   ├── uv</span><br><span class="line">│   │   ├── aix.h</span><br><span class="line">│   │   ├── android-ifaddrs.h</span><br><span class="line">│   │   ├── bsd.h</span><br><span class="line">│   │   ├── darwin.h</span><br><span class="line">│   │   ├── errno.h</span><br><span class="line">│   │   ├── linux.h</span><br><span class="line">│   │   ├── os390.h</span><br><span class="line">│   │   ├── posix.h</span><br><span class="line">│   │   ├── stdint-msvc2008.h</span><br><span class="line">│   │   ├── sunos.h</span><br><span class="line">│   │   ├── threadpool.h</span><br><span class="line">│   │   ├── tree.h</span><br><span class="line">│   │   ├── unix.h</span><br><span class="line">│   │   ├── version.h</span><br><span class="line">│   │   └── win.h</span><br><span class="line">│   └── uv.h</span><br><span class="line">├── src</span><br><span class="line">│   ├── fs-poll.c</span><br><span class="line">│   ├── heap-inl.h</span><br><span class="line">│   ├── idna.c</span><br><span class="line">│   ├── idna.h</span><br><span class="line">│   ├── inet.c</span><br><span class="line">│   ├── queue.h</span><br><span class="line">│   ├── strscpy.c</span><br><span class="line">│   ├── strscpy.h</span><br><span class="line">│   ├── threadpool.c</span><br><span class="line">│   ├── timer.c</span><br><span class="line">│   ├── uv-common.c</span><br><span class="line">│   ├── uv-common.h</span><br><span class="line">│   ├── uv-data-getter-setters.c</span><br><span class="line">│   ├── version.c</span><br><span class="line">│   ├── unix/</span><br><span class="line">│   └── win/</span><br><span class="line">├── <span class="built_in">test</span>/</span><br><span class="line">├── samples/</span><br><span class="line">├── uv.gyp</span><br><span class="line">└── vcbuild.bat</span><br></pre></td></tr></table></figure>
+
+<p>源码主要存在于以下几个目录：</p>
+<ul>
+<li><p><code>include</code>：存放 <code>.h</code> 文件，这些文件主要用于对外暴露 <code>c</code> API</p>
+<ul>
+<li><code>include/uv.h</code> 文件存放平台无关的头文件，该文件需要被 <code>include</code> 依赖项目的源码当中。</li>
+<li><code>include/uv/*.h</code> 路径下的文件则是针对不同平台进行的不同相关类型的声明定义等。</li>
+</ul>
+<p><code>include/uv.h</code> 会根据不同的环境 <code>include</code> <code>uv/win.h</code> 或 <code>uv/unix.h</code>，<code>uv/unix.h</code> 再 <code>include</code> <code>*nix</code> 系的其他系统相关头文件。如同通常的c库一样，<code>uv.h</code> 不仅作为入口文件，同时还具备文档的作用，阅读源码自然适合从此文件开始。</p>
+<p><code>include/tree.h</code> 是个例外，该文件内通过 宏实现了 <code>伸展树</code> 和 <code>红黑树</code>，而 同样采用<code>宏</code>实现的 <code>队列</code> 存放在 <code>src/queue.h</code> 文件中</p>
+</li>
+<li><p><code>src</code>：存放 <code>.c</code> 文件，和一些 不对外暴露的 <code>.h</code> 文件</p>
+<ul>
+<li><code>uv-common.h/uv-common.c</code> 包含部分公共的内部数据结构、函数的声明和实现，会被 <code>src</code> 内部大部分其他文件 包含</li>
+<li><code>timer.c</code> 对应于 定时器 的实现</li>
+<li><code>threadpool.c</code> 实现了线程池，对应的线程管理实现存在于 <code>src/[unix|win]/thread.c</code> 文件中</li>
+<li><code>queue.h</code> 基于宏实现的简单的队列</li>
+<li><code>heap-inl.h</code> 最小二叉堆实现，未采用宏实现</li>
+<li><code>fs-poll.c</code> 文件系统轮询相关实现</li>
+<li><code>idna.h/idna.c</code> IDNA Punycode 相关实现代码</li>
+<li><code>unix/</code> *nix 平台相关实现</li>
+<li><code>win/</code> win 平台相关实现</li>
+</ul>
+</li>
+<li><p><code>test</code>：存放一些 单元测试 代码，这里面的很多代码可以作为参考示例</p>
+</li>
+<li><p><code>samples</code>：存放 示例代码，其中 <code>samples/socks5-proxy</code> 是一个基于 <code>libuv</code> 实现的 <code>sock5</code> 代理</p>
+</li>
+</ul>
+<h3 id="命名风格"><a href="#命名风格" class="headerlink" title="命名风格"></a>命名风格</h3><p>libuv 所有函数、结构体都采用了统一的前缀 <code>uv_</code>，名称格式为：<code>uv_ + name</code>，<code>name</code> 可以以下划线开头，表示内部成员，例如：</p>
+<ul>
+<li>公开名称：<code>uv_loop_t = uv_ + loop_t</code> <code>uv_loop_start = uv_ + loop_start</code></li>
+<li>内部名称：<code>uv__io_t = uv_ + _io_t</code> <code>uv__io_poll = uv_ + _io_poll</code></li>
+</ul>
+<h3 id="数据结构"><a href="#数据结构" class="headerlink" title="数据结构"></a>数据结构</h3><p>libuv 中的数据结构（队列，堆）采用被称为<code>侵入式</code>的实现方式实现，下图为 Linux 内核 <code>/include/linux/list.h</code> 的实现示意图：</p>
+<p><img data-src="https://cdn-images-1.medium.com/max/1600/0*XTYvSNj_rT2UZwfm.png"></p>
+<p>该队列与通常实现最大的不同是指向兄弟节点的 <code>prev</code> 和 <code>next</code> 指针存储的并非兄弟节点数据的首地址，而是兄弟节点的某个成员（数据结构某个成员，图中是 <code>list_head</code>）的地址，如果需要拿到完整的数据结构，需要获得数据结构的首地址，已知条件是已知 <code>list_head</code> 的地址，<code>c</code> 语言程序中结构体的内存布局是对齐的，所以可以计算出 <code>list_head</code> 相对数据结构首地址的偏移量，这样就可以算出数据结构首地址了，<code>container_of</code> 就是完成这一换算的。这种方式实现的数据结构，图中 <code>data structure 1</code>、<code>data structure 2</code>、<code>data structure 3</code> 可以是不同的类型，所以这种方式实现的数据结构可以很通用。</p>
+<p><code>container_of</code> 定义如下：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> container_of(ptr, type, member) \</span></span><br><span class="line"><span class="meta">  ((type *) ((char *) (ptr) - offsetof(type, member)))</span></span><br></pre></td></tr></table></figure>
+
+<p>在 linux 内核中也定义了这个宏，但是略微不同，宏定义如下：</p>
+<p><a target="_blank" rel="noopener" href="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/kernel.h?id=refs/tags/v4.10.13#n842">https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/linux/kernel.h?id=refs/tags/v4.10.13#n842</a></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * container_of - cast a member of a structure out to the containing structure</span></span><br><span class="line"><span class="comment"> * @ptr:        the pointer to the member.</span></span><br><span class="line"><span class="comment"> * @type:       the type of the container struct this is embedded in.</span></span><br><span class="line"><span class="comment"> * @member:     the name of the member within the struct.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> container_of(ptr, type, member) (&#123;                      \</span></span><br><span class="line"><span class="meta">        const typeof( ((type *)0)-&gt;member ) *__mptr = (ptr);    \</span></span><br><span class="line"><span class="meta">        (type *)( (char *)__mptr - offsetof(type,member) );&#125;)</span></span><br></pre></td></tr></table></figure>
+
+<p>关于 <code>container_of</code> 的实现原理可参考：</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://www.cnblogs.com/idorax/p/6796897.html">typeof, offsetof 和container_of</a></li>
+</ul>
+<p>接下来，开始详细分析 libuv 源码的各个部分内容，请见下文。</p>
+<hr>
+<p><a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/tree/master/node.js/libuv/1-libuv-overview.md" >查看源文件</a>&nbsp;&nbsp;<a target="_blank" rel="noopener" href="https://github.com/liuyanjie/knowledge/edit/master/node.js/libuv/1-libuv-overview.md">编辑源文件</a></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>liuyanjie
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://blog.butonly.com/posts/node.js/libuv/1-libuv-overview/" title="libuv源码分析（一）全局概览（Overview）">https://blog.butonly.com/posts/node.js/libuv/1-libuv-overview/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/libuv/" rel="tag"># libuv</a>
+              <a href="/tags/node-js/" rel="tag"># node.js</a>
+              <a href="/tags/eventloop/" rel="tag"># eventloop</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+            </div>
+            <div class="post-nav-item">
+                <a href="/posts/node.js/libuv/2-libuv-event-loop/" rel="next" title="libuv源码分析（二）事件循环（Eventloop）">
+                  libuv源码分析（二）事件循环（Eventloop） <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    
+  <div class="comments" id="disqus_thread">
+    <noscript>Please enable JavaScript to view the comments powered by Disqus.</noscript>
+  </div>
+  
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2018 – 
+    <span itemprop="copyrightYear">2025</span>
+    <span class="with-love">
+      <i class="heartbeat"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">liuyanjie</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">166k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:31</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+  <a role="button" class="book-mark-link book-mark-link-fixed"></a>
+
+  <a href="https://github.com/c-cc-cc" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+<script class="next-config" data-name="disqus" type="application/json">{"enable":true,"shortname":"liuyanjie","count":true,"lazyload":true,"i18n":{"disqus":"disqus"}}</script>
+<script src="/js/third-party/comments/disqus.js" defer></script>
+
+</body>
+</html>
